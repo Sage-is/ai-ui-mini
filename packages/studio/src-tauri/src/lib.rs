@@ -17,6 +17,7 @@ struct ServerInfo {
     username: String,
     password: String,
     studio: String,
+    fork: String,
 }
 
 struct AppState {
@@ -164,6 +165,7 @@ pub fn run() {
         username: "opencode".into(),
         password,
         studio: studio.to_string_lossy().into(),
+        fork: fork_opencode().to_string_lossy().into(),
     };
 
     tauri::Builder::default()

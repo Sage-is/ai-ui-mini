@@ -1,17 +1,24 @@
 import { createSignal, onMount, For, Show } from "solid-js"
 import { invoke } from "@tauri-apps/api/core"
+import { openUrl } from "@tauri-apps/plugin-opener"
 import * as api from "./api"
 import { md, slides, isDeck } from "./render"
+import Terminal from "./Terminal"
 
 type Node = { name: string; path: string; dir: boolean }
-type Msg = { role: "user" | "assistant" | "tool"; text: string }
+
+// Links in the viewer open in the user's default browser, never the webview.
+function externalLinks(e: MouseEvent) {
+  const a = (e.target as HTMLElement)?.closest?.("a") as HTMLAnchorElement | null
+  if (a?.href && /^https?:\/\//i.test(a.href)) {
+    e.preventDefault()
+    openUrl(a.href)
+  }
+}
 
 export default function App() {
   const [status, setStatus] = createSignal("starting sidecar…")
   const [ready, setReady] = createSignal(false)
-  const [session, setSession] = createSignal<string>()
-  const [msgs, setMsgs] = createSignal<Msg[]>([])
-  const [busy, setBusy] = createSignal(false)
   const [tree, setTree] = createSignal<Node[]>([])
   const [expanded, setExpanded] = createSignal<Record<string, Node[]>>({})
   const [selected, setSelected] = createSignal<string>()
@@ -21,66 +28,30 @@ export default function App() {
     try {
       setTree(await invoke<Node[]>("list_dir", { rel: "" }))
     } catch {}
+    // refresh any open dirs too, so new artifacts appear live
+    const ex = expanded()
+    for (const key of Object.keys(ex)) {
+      try {
+        setExpanded((cur) => ({ ...cur, [key]: [] })) // placeholder to keep keys
+        const kids = await invoke<Node[]>("list_dir", { rel: key })
+        setExpanded((cur) => ({ ...cur, [key]: kids }))
+      } catch {}
+    }
+  }
+
+  let refreshTimer: number | undefined
+  const scheduleRefresh = () => {
+    clearTimeout(refreshTimer)
+    refreshTimer = window.setTimeout(refreshRoot, 1500)
   }
 
   onMount(async () => {
     const ok = await api.waitReady()
     if (!ok) return setStatus("sidecar unreachable")
-    const s = await api.createSession("downes")
-    setSession(s.id)
     setReady(true)
     setStatus("ready · Downes")
     refreshRoot()
   })
-
-  const activeIds = async (): Promise<string[]> => {
-    try {
-      const s = await api.server()
-      const r = await fetch(s.url + "/api/session/active", {
-        headers: { authorization: "Basic " + btoa(`${s.username}:${s.password}`) },
-      })
-      const list = await r.json()
-      return (Array.isArray(list) ? list : []).map((x: any) => x.id ?? x.sessionID)
-    } catch {
-      return []
-    }
-  }
-
-  const send = async (e: Event) => {
-    e.preventDefault()
-    const input = (e.currentTarget as HTMLFormElement).elements.namedItem("q") as HTMLInputElement
-    const q = input.value.trim()
-    if (!q || busy() || !session()) return
-    input.value = ""
-    setMsgs((m) => [...m, { role: "user", text: q }])
-    setBusy(true)
-    setStatus("Downes is working…")
-    setMsgs((m) => [...m, { role: "assistant", text: "Planning and building the course… watch the files appear on the left." }])
-    try {
-      api.sendPrompt(session()!, q) // fire; we track completion by polling
-      // poll: refresh tree + watch for idle
-      let idleChecks = 0
-      const tick = async () => {
-        await refreshRoot()
-        const active = await activeIds()
-        if (session() && active.includes(session()!)) {
-          idleChecks = 0
-          setTimeout(tick, 2000)
-        } else if (idleChecks < 2) {
-          idleChecks++
-          setTimeout(tick, 2000)
-        } else {
-          setBusy(false)
-          setStatus("ready · Downes")
-          setMsgs((m) => [...m, { role: "assistant", text: "Done. The course folder is on the left — open a file to view it." }])
-        }
-      }
-      setTimeout(tick, 2500)
-    } catch (err) {
-      setBusy(false)
-      setStatus("error sending prompt")
-    }
-  }
 
   const toggleDir = async (n: Node) => {
     const ex = expanded()
@@ -90,8 +61,7 @@ export default function App() {
       return
     }
     try {
-      const kids = await invoke<Node[]>("list_dir", { rel: n.path })
-      setExpanded({ ...ex, [n.path]: kids })
+      setExpanded({ ...ex, [n.path]: await invoke<Node[]>("list_dir", { rel: n.path }) })
     } catch {}
   }
 
@@ -99,7 +69,7 @@ export default function App() {
     setSelected(n.path)
     try {
       setContent(await invoke<string>("read_file", { rel: n.path }))
-    } catch (e) {
+    } catch {
       setContent("*Could not read file.*")
     }
   }
@@ -136,19 +106,12 @@ export default function App() {
       </div>
 
       <div class="chat">
-        <div class="messages">
-          <For each={msgs()}>{(m) => <div class={`msg ${m.role}`}>{m.text}</div>}</For>
-          <Show when={!msgs().length}>
-            <div class="empty">Ask Downes to design a course, lesson, or assessment.</div>
-          </Show>
-        </div>
-        <form class="composer" onSubmit={send}>
-          <input name="q" placeholder="Design a 4-week maker course for grade 8" disabled={!ready() || busy()} autocomplete="off" />
-          <button type="submit" disabled={!ready() || busy()}>{busy() ? "…" : "Ask"}</button>
-        </form>
+        <Show when={ready()} fallback={<div class="empty">{status()}</div>}>
+          <Terminal onActivity={scheduleRefresh} />
+        </Show>
       </div>
 
-      <div class="pane viewer">
+      <div class="pane viewer" onClick={externalLinks}>
         <Show when={content()} fallback={<div class="empty">Select a file to preview.</div>}>
           <Show
             when={selected() && isDeck(selected()!, content())}

@@ -31,7 +31,9 @@ body { background: var(--paper); color: var(--ink); font-family: var(--sans); fo
 
 .pane { overflow: auto; padding: .8rem; }
 .files { border-right: 1px solid var(--line); background: var(--surface); }
-.chat { border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 0; }
+.chat { border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.term { flex: 1; min-height: 0; padding: .4rem; background: #141915; }
+.term .xterm, .term .xterm-viewport { height: 100% !important; }
 .viewer { background: var(--paper); }
 
 .pane h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;

@@ -2,7 +2,7 @@
 // V2 HTTP API directly (fetch + SSE) to avoid SDK typing churn.
 import { invoke } from "@tauri-apps/api/core"
 
-export type ServerInfo = { url: string; username: string; password: string; studio: string }
+export type ServerInfo = { url: string; username: string; password: string; studio: string; fork: string }
 
 let info: ServerInfo | null = null
 
@@ -61,17 +61,49 @@ export async function sendPrompt(sessionID: string, prompt: string) {
   })
 }
 
-// SSE stream of a session's durable events. EventSource can't set headers,
-// so auth rides the ?auth_token query param the server supports.
-export async function streamSession(sessionID: string, onEvent: (e: any) => void): Promise<EventSource> {
+// ---- PTY: run the real opencode TUI in a terminal, stream to the webview ----
+
+// Create a PTY that runs the BRANDED fork TUI (from source) in the studio.
+// Running `opencode` off PATH would launch the stock, unbranded binary; the
+// fork's index.ts carries the sage.is wordmark and downes agent. The studio
+// path as the positional project makes the TUI operate there.
+export async function createPty(): Promise<{ id: string }> {
   const s = await server()
-  const token = btoa(`${s.username}:${s.password}`)
-  const url = `${s.url}/api/session/${sessionID}/event?auth_token=${encodeURIComponent(token)}`
-  const es = new EventSource(url)
-  es.onmessage = (m) => {
-    try {
-      onEvent(JSON.parse(m.data))
-    } catch {}
-  }
-  return es
+  return api<{ id: string }>(
+    `/api/pty?location[directory]=${encodeURIComponent(s.studio)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        command: "bun",
+        args: ["run", "--conditions=browser", "--cwd", s.fork, "src/index.ts", s.studio],
+        cwd: s.studio,
+      }),
+    },
+  )
+}
+
+// Single-use, ~60s ticket that lets the WebSocket upgrade skip Basic auth.
+export async function connectToken(ptyID: string): Promise<string> {
+  const s = await server()
+  const r = await api<{ ticket: string }>(
+    `/api/pty/${ptyID}/connect-token?location[directory]=${encodeURIComponent(s.studio)}`,
+    { method: "POST", headers: { "x-opencode-ticket": "1" } },
+  )
+  return r.ticket
+}
+
+export async function ptyConnectUrl(ptyID: string, ticket: string, cursor = 0): Promise<string> {
+  const s = await server()
+  const ws = s.url.replace(/^http/, "ws")
+  const dir = encodeURIComponent(s.studio)
+  return `${ws}/api/pty/${ptyID}/connect?location[directory]=${dir}&cursor=${cursor}&ticket=${ticket}`
+}
+
+// Out-of-band resize (not sent over the socket).
+export async function resizePty(ptyID: string, cols: number, rows: number) {
+  const s = await server()
+  return api(`/api/pty/${ptyID}?location[directory]=${encodeURIComponent(s.studio)}`, {
+    method: "PUT",
+    body: JSON.stringify({ size: { cols, rows } }),
+  })
 }
