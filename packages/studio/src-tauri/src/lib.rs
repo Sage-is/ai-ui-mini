@@ -115,9 +115,20 @@ struct Node {
     dir: bool,
 }
 
+// Studio plumbing the teacher never needs to see in the file manager.
+const HIDDEN: &[&str] = &[
+    "node_modules",
+    "package.json",
+    "package-lock.json",
+    "bun.lock",
+    "opencode.json",
+];
+
 #[tauri::command]
 fn list_dir(state: State<AppState>, rel: String) -> Result<Vec<Node>, String> {
-    let root = PathBuf::from(&state.server.studio).join("courses");
+    // Root at the studio itself, not just courses/, so anything the TUI
+    // writes (a course folder OR a stray artifact at the root) is visible.
+    let root = PathBuf::from(&state.server.studio);
     let target = root.join(rel.trim_start_matches('/'));
     let canon = target.canonicalize().map_err(|e| e.to_string())?;
     let root_canon = root.canonicalize().unwrap_or(root.clone());
@@ -128,8 +139,8 @@ fn list_dir(state: State<AppState>, rel: String) -> Result<Vec<Node>, String> {
     for e in fs::read_dir(&canon).map_err(|e| e.to_string())? {
         let e = e.map_err(|e| e.to_string())?;
         let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') {
-            continue; // hide dotfiles (.DS_Store, .git, …)
+        if name.starts_with('.') || HIDDEN.contains(&name.as_str()) {
+            continue; // hide dotfiles + studio plumbing
         }
         let p = e.path();
         out.push(Node {
@@ -148,7 +159,7 @@ fn list_dir(state: State<AppState>, rel: String) -> Result<Vec<Node>, String> {
 
 #[tauri::command]
 fn read_file(state: State<AppState>, rel: String) -> Result<String, String> {
-    let root = PathBuf::from(&state.server.studio).join("courses");
+    let root = PathBuf::from(&state.server.studio);
     let target = root.join(rel.trim_start_matches('/'));
     let canon = target.canonicalize().map_err(|e| e.to_string())?;
     let root_canon = root.canonicalize().unwrap_or(root.clone());

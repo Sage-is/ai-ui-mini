@@ -91,25 +91,53 @@ export default function App() {
     </div>
   )
 
+  // Draggable pane widths: left + right are px, center flexes between them.
+  const [leftW, setLeftW] = createSignal(240)
+  const [rightW, setRightW] = createSignal(window.innerWidth * 0.34)
+  const drag = (which: "left" | "right") => (e: PointerEvent) => {
+    e.preventDefault()
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    const startX = e.clientX
+    const startL = leftW()
+    const startR = rightW()
+    const move = (ev: PointerEvent) => {
+      if (which === "left") {
+        setLeftW(Math.min(Math.max(startL + (ev.clientX - startX), 140), window.innerWidth - 400))
+      } else {
+        setRightW(Math.min(Math.max(startR - (ev.clientX - startX), 220), window.innerWidth - 400))
+      }
+    }
+    const up = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+  }
+
   return (
-    <div class="app">
+    <div class="app" style={{ "grid-template-columns": `${leftW()}px 6px 1fr 6px ${rightW()}px` }}>
       <div class="topbar">
         <span class="brand">sage.is <small>mini · Downes studio</small></span>
         <span class={`status ${ready() ? "ok" : ""}`}>{status()}</span>
       </div>
 
       <div class="pane files">
-        <h2>Courses</h2>
-        <Show when={tree().length} fallback={<div class="empty">No courses yet.</div>}>
+        <h2>Studio</h2>
+        <Show when={tree().length} fallback={<div class="empty">Empty studio.</div>}>
           <For each={tree()}>{(n) => <TreeRow n={n} />}</For>
         </Show>
       </div>
+
+      <div class="handle" onPointerDown={drag("left")} title="Drag to resize" />
 
       <div class="chat">
         <Show when={ready()} fallback={<div class="empty">{status()}</div>}>
           <Terminal onActivity={scheduleRefresh} />
         </Show>
       </div>
+
+      <div class="handle" onPointerDown={drag("right")} title="Drag to resize" />
 
       <div class="pane viewer" onClick={externalLinks}>
         <Show when={content()} fallback={<div class="empty">Select a file to preview.</div>}>

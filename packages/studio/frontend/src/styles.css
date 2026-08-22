@@ -20,7 +20,9 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 15px; }
 
-.app { display: grid; grid-template-columns: 240px 1fr 1fr; grid-template-rows: 44px 1fr; height: 100%; }
+.app { display: grid; grid-template-columns: 240px 6px 1fr 6px 34%; grid-template-rows: 44px 1fr; height: 100%; }
+.handle { background: var(--line); cursor: col-resize; }
+.handle:hover, .handle:active { background: var(--sage); }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: .6rem;
   padding: 0 .9rem; border-bottom: 1px solid var(--line); background: var(--surface); }
 .brand { font-weight: 700; letter-spacing: -.01em; }
