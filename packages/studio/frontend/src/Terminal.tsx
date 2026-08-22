@@ -50,16 +50,27 @@ export default function Terminal(props: { onActivity?: () => void }) {
       }
     }
     ws.onclose = () => {
-      if (!disposed) setTimeout(reconnect, 1000)
+      if (!disposed) setTimeout(recover, 1000)
     }
   }
 
-  const reconnect = async () => {
+  // On disconnect: if the pty still lives, reconnect and replay. If the TUI
+  // quit or crashed, spawn a fresh one that --continues the prior session.
+  const recover = async () => {
     if (disposed) return
     try {
+      if (ptyID && (await api.ptyAlive(ptyID))) {
+        await connect()
+        return
+      }
+      const p = await api.createPty(true) // resume the prior session
+      ptyID = p.id
+      cursor = 0
+      pushSize()
       await connect()
+      pushSize()
     } catch {
-      setTimeout(reconnect, 1500)
+      setTimeout(recover, 1500)
     }
   }
 

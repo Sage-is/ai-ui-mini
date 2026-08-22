@@ -70,12 +70,14 @@ export async function sendPrompt(sessionID: string, prompt: string) {
 // Running `opencode` off PATH would launch the stock, unbranded binary; the
 // fork's index.ts carries the sage.is wordmark and downes agent. The studio
 // path as the positional project makes the TUI operate there.
-export async function createPty(): Promise<{ id: string }> {
+export async function createPty(resume = false): Promise<{ id: string }> {
   const s = await server()
   // Prefer the compiled binary (idles near 0% CPU); fall back to source.
+  // `resume` continues the prior session when relaunching after a quit.
+  const cont = resume ? ["--continue"] : []
   const spawn = s.bin
-    ? { command: s.bin, args: [s.studio] }
-    : { command: "bun", args: ["run", "--conditions=browser", "--cwd", s.fork, "src/index.ts", s.studio] }
+    ? { command: s.bin, args: [...cont, s.studio] }
+    : { command: "bun", args: ["run", "--conditions=browser", "--cwd", s.fork, "src/index.ts", ...cont, s.studio] }
   return api<{ id: string }>(
     `/api/pty?location[directory]=${encodeURIComponent(s.studio)}`,
     {
@@ -105,6 +107,19 @@ export async function ptyConnectUrl(ptyID: string, ticket: string, cursor = 0): 
   const ws = s.url.replace(/^http/, "ws")
   const dir = encodeURIComponent(s.studio)
   return `${ws}/api/pty/${ptyID}/connect?location[directory]=${dir}&cursor=${cursor}&ticket=${ticket}`
+}
+
+// Is the pty process still running? (false when the TUI has quit/crashed.)
+export async function ptyAlive(ptyID: string): Promise<boolean> {
+  const s = await server()
+  try {
+    const info = await api<any>(
+      `/api/pty/${ptyID}?location[directory]=${encodeURIComponent(s.studio)}`,
+    )
+    return info?.status === "running"
+  } catch {
+    return false // 404 → pty gone
+  }
 }
 
 // Out-of-band resize (not sent over the socket).
