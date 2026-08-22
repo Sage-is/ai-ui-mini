@@ -37,6 +37,8 @@ body { background: var(--paper); color: var(--ink); font-family: var(--sans); fo
 .term { flex: 1; min-height: 0; padding: .4rem; background: #141915; }
 .term .xterm, .term .xterm-viewport { height: 100% !important; }
 .viewer { background: var(--paper); }
+.viewer.flush { padding: 0; }
+.htmlframe { width: 100%; height: 100%; min-height: 480px; border: 0; background: #fff; }
 
 .pane h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;
   color: var(--sage); margin: .2rem 0 .8rem; }

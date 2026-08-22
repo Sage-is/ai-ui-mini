@@ -1,8 +1,8 @@
-import { createSignal, onMount, onCleanup, For, Show } from "solid-js"
+import { createSignal, onMount, onCleanup, For, Show, Switch, Match } from "solid-js"
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import * as api from "./api"
-import { md, slides, isDeck } from "./render"
+import { md, slides, isDeck, isHtml, htmlDoc } from "./render"
 import Terminal from "./Terminal"
 
 type Node = { name: string; path: string; dir: boolean }
@@ -69,6 +69,15 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
+
+    // Links clicked inside a sandboxed HTML artifact reach us by postMessage
+    // (the frame's only channel out) — route them to the default browser.
+    const onMsg = (e: MessageEvent) => {
+      const url = (e.data as { __downes_open?: string })?.__downes_open
+      if (url && /^https?:\/\//i.test(url)) invoke("open_external", { url }).catch(() => {})
+    }
+    window.addEventListener("message", onMsg)
+    onCleanup(() => window.removeEventListener("message", onMsg))
   })
 
   const toggleDir = async (n: Node) => {
@@ -157,23 +166,27 @@ export default function App() {
 
       <div class="handle" onPointerDown={drag("right")} title="Drag to resize" />
 
-      <div class="pane viewer" onClick={externalLinks}>
+      <div class="pane viewer" classList={{ flush: !!(selected() && isHtml(selected()!)) }} onClick={externalLinks}>
         <Show when={content()} fallback={<div class="empty">Select a file to preview.</div>}>
-          <Show
-            when={selected() && isDeck(selected()!, content())}
-            fallback={<div class="md" innerHTML={md(content())} />}
-          >
-            <div class="deck">
-              <For each={slides(content())}>
-                {(s) => (
-                  <div class="slide">
-                    <div innerHTML={s.body} />
-                    <Show when={s.notes}><div class="notes">{s.notes}</div></Show>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
+          <Switch fallback={<div class="md" innerHTML={md(content())} />}>
+            <Match when={selected() && isHtml(selected()!)}>
+              {/* Sandboxed, no same-origin: the artifact can run its own inline
+                  scripts/styles but cannot reach the shell or the sidecar. */}
+              <iframe class="htmlframe" title="HTML artifact" sandbox="allow-scripts" srcdoc={htmlDoc(content())} />
+            </Match>
+            <Match when={selected() && isDeck(selected()!, content())}>
+              <div class="deck">
+                <For each={slides(content())}>
+                  {(s) => (
+                    <div class="slide">
+                      <div innerHTML={s.body} />
+                      <Show when={s.notes}><div class="notes">{s.notes}</div></Show>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Match>
+          </Switch>
         </Show>
       </div>
     </div>
