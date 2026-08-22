@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, For, Show } from "solid-js"
 import { invoke } from "@tauri-apps/api/core"
-import { openUrl } from "@tauri-apps/plugin-opener"
+import { getCurrentWebview } from "@tauri-apps/api/webview"
 import * as api from "./api"
 import { md, slides, isDeck } from "./render"
 import Terminal from "./Terminal"
@@ -12,7 +12,7 @@ function externalLinks(e: MouseEvent) {
   const a = (e.target as HTMLElement)?.closest?.("a") as HTMLAnchorElement | null
   if (a?.href && /^https?:\/\//i.test(a.href)) {
     e.preventDefault()
-    openUrl(a.href)
+    invoke("open_external", { url: a.href }).catch(() => {})
   }
 }
 
@@ -53,6 +53,22 @@ export default function App() {
     // Poll so the browser always reflects what the TUI writes, activity or not.
     const iv = window.setInterval(refreshRoot, 2000)
     onCleanup(() => clearInterval(iv))
+
+    // Zoom: Cmd/Ctrl +/-/0. Native webview zoom reflows the layout, so the
+    // terminal refits. (zoomHotkeysEnabled alone doesn't bind on macOS here.)
+    let zoom = 1
+    const wv = getCurrentWebview()
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.key === "=" || e.key === "+") zoom = Math.min(zoom + 0.1, 3)
+      else if (e.key === "-") zoom = Math.max(zoom - 0.1, 0.5)
+      else if (e.key === "0") zoom = 1
+      else return
+      e.preventDefault()
+      wv.setZoom(zoom).catch(() => {})
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
   const toggleDir = async (n: Node) => {

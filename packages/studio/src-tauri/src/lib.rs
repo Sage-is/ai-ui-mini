@@ -174,6 +174,27 @@ fn list_dir(state: State<AppState>, rel: String) -> Result<Vec<Node>, String> {
     Ok(out)
 }
 
+// Open an external http(s) link in the user's default browser. Owned here
+// rather than via the opener plugin's scope config — one dependable path.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("only http(s) links".into());
+    }
+    let prog = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "start"
+    } else {
+        "xdg-open"
+    };
+    Command::new(prog)
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn read_file(state: State<AppState>, rel: String) -> Result<String, String> {
     let root = PathBuf::from(&state.server.studio);
@@ -211,7 +232,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             studio_server,
             list_dir,
-            read_file
+            read_file,
+            open_external
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
