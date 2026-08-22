@@ -18,6 +18,23 @@ struct ServerInfo {
     password: String,
     studio: String,
     fork: String,
+    bin: String, // compiled TUI binary if built, else "" (fall back to source)
+}
+
+// The compiled fork binary, if `bun run build` has produced it. Running the
+// binary idles near 0% CPU; running from source via bun keeps the runtime
+// hot. Prefer the binary; the frontend/launcher fall back to source.
+fn compiled_bin(fork: &Path) -> String {
+    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
+    let cand = fork
+        .join("dist")
+        .join(format!("opencode-darwin-{arch}"))
+        .join("bin/opencode");
+    if cand.exists() {
+        cand.to_string_lossy().into()
+    } else {
+        String::new()
+    }
 }
 
 struct AppState {
@@ -181,6 +198,7 @@ pub fn run() {
         password,
         studio: studio.to_string_lossy().into(),
         fork: fork_opencode().to_string_lossy().into(),
+        bin: compiled_bin(&fork_opencode()),
     };
 
     tauri::Builder::default()

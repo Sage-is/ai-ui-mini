@@ -2,7 +2,7 @@
 // V2 HTTP API directly (fetch + SSE) to avoid SDK typing churn.
 import { invoke } from "@tauri-apps/api/core"
 
-export type ServerInfo = { url: string; username: string; password: string; studio: string; fork: string }
+export type ServerInfo = { url: string; username: string; password: string; studio: string; fork: string; bin: string }
 
 let info: ServerInfo | null = null
 
@@ -72,13 +72,16 @@ export async function sendPrompt(sessionID: string, prompt: string) {
 // path as the positional project makes the TUI operate there.
 export async function createPty(): Promise<{ id: string }> {
   const s = await server()
+  // Prefer the compiled binary (idles near 0% CPU); fall back to source.
+  const spawn = s.bin
+    ? { command: s.bin, args: [s.studio] }
+    : { command: "bun", args: ["run", "--conditions=browser", "--cwd", s.fork, "src/index.ts", s.studio] }
   return api<{ id: string }>(
     `/api/pty?location[directory]=${encodeURIComponent(s.studio)}`,
     {
       method: "POST",
       body: JSON.stringify({
-        command: "bun",
-        args: ["run", "--conditions=browser", "--cwd", s.fork, "src/index.ts", s.studio],
+        ...spawn,
         cwd: s.studio,
         // opentui reads COLORTERM for truecolor; TERM is set by the pty core.
         env: { COLORTERM: "truecolor" },
