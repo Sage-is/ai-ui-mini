@@ -1,6 +1,6 @@
-// Sage.is AI-UI mini wordmark. Two-tone: left half muted, right half bold,
-// matching the upstream renderer in component/logo.tsx. The platform name is
-// the mark; the Downes agent is named in the footer.
+// Sage.is AI-UI mini wordmark. Left half "sage.is" in block art (muted),
+// with a small "mini" tier tag on the baseline row (bold). The Downes agent
+// is named in the footer. Renderer: component/logo.tsx pairs left[i]/right[i].
 export const logo = {
   left: [
     " ████  ███   ████ █████   █  ████",
@@ -10,12 +10,11 @@ export const logo = {
     "████  █   █  ████ █████ █ █ ████ ",
   ],
   right: [
-     "               ",
-    "               ",
-    "██ ██ █ ██  █ █",
-    "█ █ █ █ █ █ █ █",
-    "█   █ █ █  ██ █",
-   
+    "",
+    "",
+    "",
+    "",
+    "mini",
   ],
 }
 
