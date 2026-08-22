@@ -136,7 +136,7 @@ export default function App() {
   return (
     <div class="app" style={{ "grid-template-columns": `${leftW()}px 6px 1fr 6px ${rightW()}px` }}>
       <div class="topbar">
-        <span class="brand">sage.is <small>mini · Downes studio</small></span>
+        <span class="brand">SAGE.IS<small style="margin-left: 0">mini</small></span>
         <span class={`status ${ready() ? "ok" : ""}`}>{status()}</span>
       </div>
 
