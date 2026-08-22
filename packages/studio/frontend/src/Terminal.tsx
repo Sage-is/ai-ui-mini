@@ -28,8 +28,19 @@ export default function Terminal(props: { onActivity?: () => void }) {
   const fit = new FitAddon()
   term.loadAddon(fit)
 
+  const fitNow = () => {
+    try {
+      fit.fit()
+    } catch {}
+  }
+  const dims = () => ({
+    cols: term.cols && term.cols > 2 ? term.cols : 120,
+    rows: term.rows && term.rows > 2 ? term.rows : 32,
+  })
   const pushSize = () => {
-    if (ptyID) api.resizePty(ptyID, term.cols, term.rows).catch(() => {})
+    if (!ptyID) return
+    const { cols, rows } = dims()
+    api.resizePty(ptyID, cols, rows).catch(() => {})
   }
 
   const connect = async () => {
@@ -66,20 +77,22 @@ export default function Terminal(props: { onActivity?: () => void }) {
 
   onMount(async () => {
     term.open(host)
-    fit.fit()
     term.onData((d) => ws?.readyState === WebSocket.OPEN && ws.send(d))
     term.onResize(() => pushSize())
-    const ro = new ResizeObserver(() => {
-      try {
-        fit.fit()
-      } catch {}
-    })
+    // Re-fit whenever the pane changes size; each fit pushes the new size.
+    const ro = new ResizeObserver(() => fitNow())
     ro.observe(host)
     onCleanup(() => ro.disconnect())
+
+    // Let the grid/flex layout settle so fit measures real dimensions,
+    // otherwise the TUI renders into a 0-size buffer (blank + cursor).
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    fitNow()
 
     try {
       const p = await api.createPty()
       ptyID = p.id
+      pushSize() // give the TUI a real size before it draws
       await connect()
       pushSize()
       term.focus()
