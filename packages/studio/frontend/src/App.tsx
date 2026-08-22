@@ -2,7 +2,7 @@ import { createSignal, onMount, onCleanup, For, Show, Switch, Match } from "soli
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import * as api from "./api"
-import { md, slides, isDeck, isHtml, htmlDoc } from "./render"
+import { md, slides, isDeck, isHtml, htmlDoc, plain } from "./render"
 import Terminal from "./Terminal"
 
 type Node = { name: string; path: string; dir: boolean }
@@ -78,6 +78,13 @@ export default function App() {
     }
     window.addEventListener("message", onMsg)
     onCleanup(() => window.removeEventListener("message", onMsg))
+
+    // Esc leaves the fullscreen HTML overlay.
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && fs()) setFs(false)
+    }
+    window.addEventListener("keydown", onEsc)
+    onCleanup(() => window.removeEventListener("keydown", onEsc))
   })
 
   const toggleDir = async (n: Node) => {
@@ -99,6 +106,66 @@ export default function App() {
     } catch {
       setContent("*Could not read file.*")
     }
+  }
+
+  // ---- viewer toolbar --------------------------------------------------
+  const showingHtml = () => !!(selected() && isHtml(selected()!))
+
+  // HTML: fullscreen overlay (Esc exits) + open the on-disk file in browser.
+  const [fs, setFs] = createSignal(false)
+  const openBrowser = () => {
+    if (selected()) invoke("open_in_browser", { rel: selected() }).catch(() => {})
+  }
+
+  // Markdown: print / Save as PDF. WKWebView has no JS window.print(), so we
+  // render a print-ready page, hand it to the browser via Rust, and let it
+  // auto-open the print dialog on load (Save as PDF lives there too).
+  const doPrint = () => {
+    const doc =
+      `<!doctype html><html><head><meta charset="utf-8"><title>${selected() || "artifact"}</title>` +
+      `<style>body{font:15px/1.65 Georgia,serif;color:#111;max-width:46rem;margin:2rem auto;padding:0 1rem}` +
+      `h1,h2,h3{font-family:system-ui,sans-serif;line-height:1.25}` +
+      `table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:.4rem .6rem;text-align:left}` +
+      `code{font-family:ui-monospace,monospace;background:#f0f0f0;padding:.1em .3em;border-radius:3px}` +
+      `pre{background:#f0f0f0;padding:.8rem;border-radius:4px;overflow:auto}</style></head>` +
+      `<body>${md(content())}` +
+      `<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script>` +
+      `</body></html>`
+    invoke("print_html", { html: doc }).catch(() => {})
+  }
+
+  // Copy: three modes, one is the default (switchable). Picking a mode copies
+  // it and makes it the new default.
+  type CopyMode = "rich" | "markdown" | "plain"
+  const [copyMode, setCopyMode] = createSignal<CopyMode>("rich")
+  const [menuOpen, setMenuOpen] = createSignal(false)
+  const [copied, setCopied] = createSignal(false)
+  const flashCopied = () => {
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1200)
+  }
+  const runCopy = async (mode: CopyMode) => {
+    const src = content()
+    try {
+      if (mode === "rich" && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([md(src)], { type: "text/html" }),
+            "text/plain": new Blob([plain(src)], { type: "text/plain" }),
+          }),
+        ])
+      } else if (mode === "markdown") {
+        await navigator.clipboard.writeText(src)
+      } else {
+        await navigator.clipboard.writeText(plain(src))
+      }
+      flashCopied()
+    } catch {}
+  }
+  const pickCopy = (mode: CopyMode) => {
+    setCopyMode(mode)
+    setMenuOpen(false)
+    runCopy(mode)
   }
 
   const TreeRow = (p: { n: Node }) => (
@@ -166,7 +233,33 @@ export default function App() {
 
       <div class="handle" onPointerDown={drag("right")} title="Drag to resize" />
 
-      <div class="pane viewer" classList={{ flush: !!(selected() && isHtml(selected()!)) }} onClick={externalLinks}>
+      <div class="pane viewer" classList={{ flush: showingHtml() }} onClick={externalLinks}>
+        <Show when={content()}>
+          <div class="viewer-tools">
+            <Switch>
+              <Match when={showingHtml()}>
+                <button class="vtool" title="Fullscreen (Esc to exit)" onClick={() => setFs(true)}>⛶</button>
+                <button class="vtool" title="Open in browser" onClick={openBrowser}>↗</button>
+              </Match>
+              <Match when={!showingHtml()}>
+                <button class="vtool" title="Print / Save as PDF" onClick={doPrint}>⎙</button>
+                <span class="copywrap">
+                  <button class="vtool" title={`Copy (${copyMode()})`} onClick={() => runCopy(copyMode())}>
+                    {copied() ? "✓" : "⧉"}
+                  </button>
+                  <button class="vtool caret" title="Copy as…" onClick={() => setMenuOpen((v) => !v)}>▾</button>
+                  <Show when={menuOpen()}>
+                    <div class="copymenu">
+                      <div classList={{ on: copyMode() === "rich" }} onClick={() => pickCopy("rich")}>Rich text</div>
+                      <div classList={{ on: copyMode() === "markdown" }} onClick={() => pickCopy("markdown")}>Markdown</div>
+                      <div classList={{ on: copyMode() === "plain" }} onClick={() => pickCopy("plain")}>Plain text</div>
+                    </div>
+                  </Show>
+                </span>
+              </Match>
+            </Switch>
+          </div>
+        </Show>
         <Show when={content()} fallback={<div class="empty">Select a file to preview.</div>}>
           <Switch fallback={<div class="md" innerHTML={md(content())} />}>
             <Match when={selected() && isHtml(selected()!)}>
@@ -187,6 +280,12 @@ export default function App() {
               </div>
             </Match>
           </Switch>
+        </Show>
+        <Show when={fs() && showingHtml()}>
+          <div class="fs-overlay">
+            <button class="fs-close" title="Exit fullscreen (Esc)" onClick={() => setFs(false)}>✕</button>
+            <iframe class="fs-frame" title="HTML artifact" sandbox="allow-scripts" srcdoc={htmlDoc(content())} />
+          </div>
         </Show>
       </div>
     </div>

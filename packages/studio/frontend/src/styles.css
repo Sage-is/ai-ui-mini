@@ -36,9 +36,46 @@ body { background: var(--paper); color: var(--ink); font-family: var(--sans); fo
 .chat { border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .term { flex: 1; min-height: 0; padding: .4rem; background: #141915; }
 .term .xterm, .term .xterm-viewport { height: 100% !important; }
-.viewer { background: var(--paper); }
+.viewer { background: var(--paper); position: relative; }
 .viewer.flush { padding: 0; }
 .htmlframe { width: 100%; height: 100%; min-height: 480px; border: 0; background: #fff; }
+
+/* floating viewer toolbar, top-right */
+.viewer-tools {
+  position: absolute; top: .5rem; right: .6rem; z-index: 5;
+  display: flex; gap: .25rem; align-items: flex-start;
+  opacity: .55; transition: opacity .12s;
+}
+.viewer:hover .viewer-tools { opacity: 1; }
+.vtool {
+  font-size: 14px; line-height: 1; width: 28px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--fg, #fbfbfb);
+  border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08);
+}
+.vtool:hover { background: var(--surface-2); }
+.vtool.caret { width: 18px; margin-left: -2px; border-left: 0; border-radius: 0 6px 6px 0; }
+.copywrap { position: relative; display: inline-flex; }
+.copywrap .vtool:first-child { border-radius: 6px 0 0 6px; }
+.copymenu {
+  position: absolute; top: 30px; right: 0; z-index: 6;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.16); overflow: hidden; min-width: 130px;
+}
+.copymenu div { padding: .45rem .7rem; font-size: .82rem; cursor: pointer; white-space: nowrap; }
+.copymenu div:hover { background: var(--surface-2); }
+.copymenu div.on { color: var(--sage); font-weight: 600; }
+
+/* in-app fullscreen overlay for HTML artifacts */
+.fs-overlay { position: fixed; inset: 0; z-index: 50; background: #fff; }
+.fs-frame { width: 100%; height: 100%; border: 0; }
+.fs-close {
+  position: fixed; top: .6rem; right: .8rem; z-index: 51;
+  width: 32px; height: 32px; font-size: 15px; cursor: pointer;
+  background: rgba(20,20,20,.72); color: #fff; border: 0; border-radius: 50%;
+}
+.fs-close:hover { background: rgba(20,20,20,.9); }
 
 .pane h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;
   color: var(--sage); margin: .2rem 0 .8rem; }

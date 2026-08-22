@@ -190,6 +190,56 @@ fn open_external(url: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+// Open a studio file (an HTML artifact) in the user's default browser. Fenced
+// to the studio; the real browser gets the raw on-disk file, so its own origin
+// makes links, history, and relative assets work natively (no srcdoc bridge).
+#[tauri::command]
+fn open_in_browser(state: State<AppState>, rel: String) -> Result<(), String> {
+    let root = PathBuf::from(&state.server.studio);
+    let target = root.join(rel.trim_start_matches('/'));
+    let canon = target.canonicalize().map_err(|e| e.to_string())?;
+    let root_canon = root.canonicalize().unwrap_or(root.clone());
+    if !canon.starts_with(&root_canon) {
+        return Err("outside studio".into());
+    }
+    let prog = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "start"
+    } else {
+        "xdg-open"
+    };
+    Command::new(prog)
+        .arg(&canon)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+// Print / Save as PDF. The macOS webview (WKWebView) does not implement
+// JavaScript window.print(), so an in-app print silently no-ops. Instead we
+// write the rendered artifact to a temp HTML file and open it in the default
+// browser, where its own print dialog (and Save as PDF) works reliably. The
+// page auto-fires print on load.
+#[tauri::command]
+fn print_html(html: String) -> Result<(), String> {
+    let mut path = std::env::temp_dir();
+    path.push("downes-print.html");
+    fs::write(&path, html).map_err(|e| e.to_string())?;
+    let prog = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "start"
+    } else {
+        "xdg-open"
+    };
+    Command::new(prog)
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn read_file(state: State<AppState>, rel: String) -> Result<String, String> {
     let root = PathBuf::from(&state.server.studio);
@@ -228,7 +278,9 @@ pub fn run() {
             studio_server,
             list_dir,
             read_file,
-            open_external
+            open_external,
+            open_in_browser,
+            print_html
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

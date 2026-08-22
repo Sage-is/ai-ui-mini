@@ -35,6 +35,14 @@ export function isHtml(name: string): boolean {
   return /\.html?$/i.test(name)
 }
 
+// Rendered Markdown reduced to plain text (no symbols, no tags) for the
+// plain-text copy mode.
+export function plain(src: string): string {
+  const el = document.createElement("div")
+  el.innerHTML = md(src)
+  return (el.textContent || "").replace(/\n{3,}/g, "\n\n").trim()
+}
+
 // A tiny script injected into an HTML artifact. It does two jobs:
 //   1. Neutralize the History API. The frame is sandboxed with no same-origin,
 //      so its origin is opaque (about:srcdoc); a deck calling
