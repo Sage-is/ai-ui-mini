@@ -28,7 +28,8 @@
       "packages/console/*",
       "packages/stats/*",
       "packages/sdk/js",
-      "packages/slack"
+      "packages/slack",
+      "packages/studio/frontend"
     ],
     "catalog": {
       "@effect/opentelemetry": "4.0.0-beta.83",
@@ -97,6 +98,7 @@
   },
   "devDependencies": {
     "@actions/artifact": "5.0.1",
+    "@tauri-apps/cli": "^2",
     "@tsconfig/bun": "catalog:",
     "@types/mime-types": "3.0.1",
     "@typescript/native-preview": "catalog:",
