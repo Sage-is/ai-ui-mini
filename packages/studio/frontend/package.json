@@ -14,8 +14,7 @@
     "marked": "18.0.7",
     "dompurify": "3.3.1",
     "@tauri-apps/plugin-opener": "^2",
-    "@xterm/xterm": "5.5.0",
-    "@xterm/addon-fit": "0.10.0"
+    "ghostty-web": "github:anomalyco/ghostty-web#83c0a07b8628b748aed073b232cb4b52a6ca11c1"
   },
   "devDependencies": {
     "vite": "7.1.10",

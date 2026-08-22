@@ -127,9 +127,13 @@ fn list_dir(state: State<AppState>, rel: String) -> Result<Vec<Node>, String> {
     let mut out = vec![];
     for e in fs::read_dir(&canon).map_err(|e| e.to_string())? {
         let e = e.map_err(|e| e.to_string())?;
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue; // hide dotfiles (.DS_Store, .git, …)
+        }
         let p = e.path();
         out.push(Node {
-            name: e.file_name().to_string_lossy().into(),
+            name: name.clone(),
             path: p
                 .strip_prefix(&root_canon)
                 .unwrap_or(&p)
