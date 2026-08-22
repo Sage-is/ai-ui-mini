@@ -88,10 +88,12 @@ fn random_password() -> String {
 
 fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     let fork = fork_opencode();
-    let d = studio.join(".downes");
-    for sub in ["config", "xdg/data", "xdg/state", "xdg/cache"] {
-        let _ = fs::create_dir_all(d.join(sub));
-    }
+    // Layer the curriculum config on top of the user's normal opencode
+    // environment. We deliberately do NOT isolate XDG or use --pure: the
+    // studio shares the user's real providers, models, and connections and
+    // can save new ones (auth persists globally), matching plain opencode.
+    // OPENCODE_CONFIG merges our skills/agent/METHOD; project config stays
+    // off so a downloaded course cannot smuggle its own config.
     Command::new("bun")
         .args([
             "run",
@@ -106,15 +108,8 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         .current_dir(&fork)
         .env("OPENCODE_SERVER_PASSWORD", password)
         .env("OPENCODE_CONFIG", studio.join("opencode.json"))
-        .env("XDG_CONFIG_HOME", d.join("xdg/config"))
-        .env("XDG_DATA_HOME", d.join("xdg/data"))
-        .env("XDG_STATE_HOME", d.join("xdg/state"))
-        .env("XDG_CACHE_HOME", d.join("xdg/cache"))
-        .env("OPENCODE_PURE", "1")
         .env("OPENCODE_DISABLE_PROJECT_CONFIG", "1")
         .env("OPENCODE_DISABLE_AUTOUPDATE", "1")
-        .env("OPENCODE_DISABLE_EXTERNAL_SKILLS", "1")
-        .env("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS", "1")
         .spawn()
         .ok()
 }
