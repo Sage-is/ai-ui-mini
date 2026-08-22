@@ -1,28 +1,22 @@
 import { onCleanup, onMount } from "solid-js"
-import type { Ghostty } from "ghostty-web"
 import * as api from "./api"
+import { createEngine, type TerminalEngine } from "./terminal-engine"
+import { terminalWriter } from "./terminal-writer"
 
-// ghostty-web is a full terminal emulator (Ghostty in WASM). opencode's TUI
-// (opentui) probes advanced capabilities — text-sizing, pixel size, cursor
-// readback — that xterm.js does not answer; ghostty does, so the TUI renders.
-let shared: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
-const loadGhostty = () => {
-  if (!shared) shared = import("ghostty-web").then(async (mod) => ({ mod, ghostty: await mod.Ghostty.load() }))
-  return shared
-}
-
+// Runs the branded opencode TUI (a server PTY) inside a web terminal.
+// The emulator is behind terminal-engine.ts, so it is a one-line swap.
 export default function Terminal(props: { onActivity?: () => void }) {
   let host!: HTMLDivElement
   let ws: WebSocket | undefined
   let ptyID: string | undefined
+  let engine: TerminalEngine | undefined
+  let output: ReturnType<typeof terminalWriter> | undefined
   let disposed = false
   let cursor = 0
-  let term: any
-  let fit: any
 
   const dims = () => ({
-    cols: term?.cols && term.cols > 2 ? term.cols : 120,
-    rows: term?.rows && term.rows > 2 ? term.rows : 32,
+    cols: engine && engine.cols > 2 ? engine.cols : 120,
+    rows: engine && engine.rows > 2 ? engine.rows : 32,
   })
   const pushSize = () => {
     if (!ptyID) return
@@ -31,7 +25,7 @@ export default function Terminal(props: { onActivity?: () => void }) {
   }
   const fitNow = () => {
     try {
-      fit?.fit()
+      engine?.fit()
     } catch {}
   }
 
@@ -41,16 +35,19 @@ export default function Terminal(props: { onActivity?: () => void }) {
     ws = new WebSocket(url)
     ws.binaryType = "arraybuffer"
     ws.onmessage = (m) => {
+      // Terminal OUTPUT arrives as string frames; binary frames are control.
+      if (typeof m.data === "string") {
+        cursor += m.data.length
+        output?.push(m.data)
+        props.onActivity?.()
+        return
+      }
       const bytes = new Uint8Array(m.data as ArrayBuffer)
       if (bytes[0] === 0) {
         try {
           cursor = JSON.parse(new TextDecoder().decode(bytes.slice(1))).cursor ?? cursor
         } catch {}
-        return
       }
-      cursor += bytes.length
-      term?.write(bytes)
-      props.onActivity?.()
     }
     ws.onclose = () => {
       if (!disposed) setTimeout(reconnect, 1000)
@@ -67,34 +64,27 @@ export default function Terminal(props: { onActivity?: () => void }) {
   }
 
   onMount(async () => {
-    let mod: typeof import("ghostty-web"), ghostty: Ghostty
     try {
-      ;({ mod, ghostty } = await loadGhostty())
+      engine = await createEngine()
     } catch (e) {
       host.textContent = "Could not load the terminal engine: " + String(e)
       return
     }
     if (disposed) return
 
-    term = new mod.Terminal({
-      cursorBlink: true,
-      cursorStyle: "bar",
-      fontSize: 13,
-      fontFamily: '"SF Mono","Cascadia Code",Menlo,monospace',
-      convertEol: false,
-      theme: { background: "#141915", foreground: "#e8ece7", cursor: "#7fb694" },
-      scrollback: 10000,
-      ghostty,
-    })
-    fit = new mod.FitAddon()
-    term.loadAddon(fit)
-    term.open(host)
-    term.onData((d: string) => ws?.readyState === WebSocket.OPEN && ws.send(d))
-    term.onResize(() => pushSize())
+    engine.open(host)
+    output = terminalWriter((data, done) => engine!.write(data, done))
+    engine.onData((d) => ws?.readyState === WebSocket.OPEN && ws.send(d))
+    engine.onResize(() => pushSize())
+
     const ro = new ResizeObserver(() => fitNow())
     ro.observe(host)
     onCleanup(() => ro.disconnect())
+    if (typeof document !== "undefined" && document.fonts) {
+      document.fonts.ready.then(() => fitNow())
+    }
 
+    // Let layout settle so fit measures real dimensions (0-size → blank).
     await new Promise((r) => requestAnimationFrame(() => r(null)))
     fitNow()
 
@@ -104,7 +94,7 @@ export default function Terminal(props: { onActivity?: () => void }) {
       pushSize()
       await connect()
       pushSize()
-      term.focus?.()
+      engine.focus()
     } catch (e) {
       host.textContent = "Could not start the Downes terminal: " + String(e)
     }
@@ -114,7 +104,7 @@ export default function Terminal(props: { onActivity?: () => void }) {
     disposed = true
     ws?.close()
     try {
-      term?.dispose()
+      engine?.dispose()
     } catch {}
   })
 

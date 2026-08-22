@@ -80,6 +80,8 @@ export async function createPty(): Promise<{ id: string }> {
         command: "bun",
         args: ["run", "--conditions=browser", "--cwd", s.fork, "src/index.ts", s.studio],
         cwd: s.studio,
+        // opentui reads COLORTERM for truecolor; TERM is set by the pty core.
+        env: { COLORTERM: "truecolor" },
       }),
     },
   )
