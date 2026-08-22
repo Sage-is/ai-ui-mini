@@ -84,7 +84,7 @@ export default function Terminal(props: { onActivity?: () => void }) {
       pushSize()
       term.focus()
     } catch (e) {
-      term.write("\r\n\x1b[31mCould not start the Downes terminal.\x1b[0m\r\n")
+      term.write(`\r\n\x1b[31mCould not start the Downes terminal:\x1b[0m ${String(e)}\r\n`)
     }
   })
 

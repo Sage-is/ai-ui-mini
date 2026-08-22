@@ -27,7 +27,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
   if (!r.ok) throw new Error(`${path} → ${r.status}`)
-  return r.status === 204 ? (undefined as T) : r.json()
+  if (r.status === 204) return undefined as T
+  const j = await r.json()
+  // V2 API wraps payloads as { location, data }; unwrap to the data.
+  return (j && typeof j === "object" && "data" in j && "location" in j ? j.data : j) as T
 }
 
 export async function health(): Promise<boolean> {
