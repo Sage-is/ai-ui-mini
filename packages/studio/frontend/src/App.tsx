@@ -1,4 +1,4 @@
-import { createSignal, onMount, For, Show } from "solid-js"
+import { createSignal, onMount, onCleanup, For, Show } from "solid-js"
 import { invoke } from "@tauri-apps/api/core"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import * as api from "./api"
@@ -28,21 +28,20 @@ export default function App() {
     try {
       setTree(await invoke<Node[]>("list_dir", { rel: "" }))
     } catch {}
-    // refresh any open dirs too, so new artifacts appear live
-    const ex = expanded()
-    for (const key of Object.keys(ex)) {
+    // refresh any open dirs too, so new artifacts appear live (no flicker)
+    for (const key of Object.keys(expanded())) {
       try {
-        setExpanded((cur) => ({ ...cur, [key]: [] })) // placeholder to keep keys
         const kids = await invoke<Node[]>("list_dir", { rel: key })
         setExpanded((cur) => ({ ...cur, [key]: kids }))
       } catch {}
     }
   }
 
+  // Snappy refresh on TUI activity; the interval below is the guarantee.
   let refreshTimer: number | undefined
   const scheduleRefresh = () => {
     clearTimeout(refreshTimer)
-    refreshTimer = window.setTimeout(refreshRoot, 1500)
+    refreshTimer = window.setTimeout(refreshRoot, 600)
   }
 
   onMount(async () => {
@@ -51,6 +50,9 @@ export default function App() {
     setReady(true)
     setStatus("ready · Downes")
     refreshRoot()
+    // Poll so the browser always reflects what the TUI writes, activity or not.
+    const iv = window.setInterval(refreshRoot, 2000)
+    onCleanup(() => clearInterval(iv))
   })
 
   const toggleDir = async (n: Node) => {
