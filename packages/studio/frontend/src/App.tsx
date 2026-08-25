@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview"
 import * as api from "./api"
 import { md, slides, isDeck, isHtml, htmlDoc, plain } from "./render"
 import Terminal from "./Terminal"
+import ThemeToggle from "./ThemeToggle"
 
 type Node = { name: string; path: string; dir: boolean }
 
@@ -214,6 +215,7 @@ export default function App() {
       <div class="topbar">
         <span class="brand">SAGE.IS<small style="margin-left: 0">mini</small></span>
         <span class={`status ${ready() ? "ok" : ""}`}>{status()}</span>
+        <ThemeToggle />
       </div>
 
       <div class="pane files">

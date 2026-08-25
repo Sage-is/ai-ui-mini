@@ -17,10 +17,25 @@ export interface TerminalEngine {
   readonly cols: number
   readonly rows: number
   focus(): void
+  setTheme(theme: TerminalTheme): void
   dispose(): void
 }
 
-const THEME = { background: "#141915", foreground: "#e8ece7", cursor: "#7fb694" }
+export type TerminalTheme = { background: string; foreground: string; cursor: string }
+
+// The emulator needs concrete colors, not CSS variables, so read the resolved
+// tokens off <html> and hand them over. Called again on every theme flip so
+// the terminal pane never sits at odds with the chrome around it.
+export function themeFromCss(): TerminalTheme {
+  const s = getComputedStyle(document.documentElement)
+  const pick = (name: string, fallback: string) => s.getPropertyValue(name).trim() || fallback
+  return {
+    background: pick("--background", "#141915"),
+    foreground: pick("--text-main", "#e8ece7"),
+    cursor: pick("--accent", "#7fb694"),
+  }
+}
+
 const FONT = '"SF Mono","Cascadia Code",Menlo,monospace'
 
 async function xtermEngine(): Promise<TerminalEngine> {
@@ -32,7 +47,7 @@ async function xtermEngine(): Promise<TerminalEngine> {
     cursorBlink: true,
     fontSize: 13,
     fontFamily: FONT,
-    theme: THEME,
+    theme: themeFromCss(),
     scrollback: 10000,
     allowProposedApi: true,
   })
@@ -51,6 +66,9 @@ async function xtermEngine(): Promise<TerminalEngine> {
       return term.rows
     },
     focus: () => term.focus(),
+    setTheme: (t) => {
+      term.options.theme = t
+    },
     dispose: () => term.dispose(),
   }
 }
@@ -65,7 +83,7 @@ async function ghosttyEngine(): Promise<TerminalEngine> {
     fontFamily: FONT,
     convertEol: false,
     allowTransparency: false,
-    theme: THEME,
+    theme: themeFromCss(),
     scrollback: 10000,
     ghostty,
   })
@@ -84,6 +102,9 @@ async function ghosttyEngine(): Promise<TerminalEngine> {
       return term.rows
     },
     focus: () => term.focus?.(),
+    setTheme: (t) => {
+      term.options = { ...term.options, theme: t }
+    },
     dispose: () => term.dispose(),
   }
 }

@@ -1,10 +1,58 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SAGE.ISmini</title>
-    <link rel="stylesheet" href="/src/styles.css" />
+    <!--
+      Theme bootstrap. Runs BEFORE the body parses, so the app never flashes
+      the wrong theme (startr.style's own include sits at the end of its
+      layout and does flash; we do not copy that).
+
+      Mirrors Sage.is AI-UI: it sets BOTH the data-theme attribute (which
+      startr.style's [data-theme="dark"] block keys off) and the .dark/.light
+      class, under the same localStorage key, "theme".
+
+      "system" follows the OS and keeps following it live; an explicit
+      light/dark choice overrides and persists until the user resets.
+    -->
+    <script>
+      ;(function () {
+        var KEY = "theme"
+        function media() {
+          return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)")
+        }
+        function resolve(pref) {
+          if (pref === "light" || pref === "dark") return pref
+          var m = media()
+          return m && m.matches ? "dark" : "light"
+        }
+        window.__applyTheme = function (pref) {
+          var el = document.documentElement
+          var t = resolve(pref)
+          el.setAttribute("data-theme", t)
+          el.classList.toggle("dark", t === "dark")
+          el.classList.toggle("light", t !== "dark")
+          el.setAttribute("data-theme-pref", pref)
+        }
+        var stored = null
+        try {
+          stored = localStorage.getItem(KEY)
+        } catch (e) {}
+        window.__applyTheme(stored || "system")
+        // Keep following the OS while the preference is "system".
+        var m = media()
+        if (m && m.addEventListener) {
+          m.addEventListener("change", function () {
+            var cur = null
+            try {
+              cur = localStorage.getItem(KEY)
+            } catch (e) {}
+            if (!cur || cur === "system") window.__applyTheme("system")
+          })
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -86,16 +86,42 @@ fn random_password() -> String {
     buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+// Locate `bun` by absolute path. A GUI app launched from Finder/Dock does
+// NOT inherit the shell PATH — it gets /usr/bin:/bin:/usr/sbin:/sbin — so a
+// bare Command::new("bun") resolves to nothing and the sidecar never starts.
+// That is invisible in `tauri dev` (which inherits the terminal's PATH) and
+// breaks every bundled install.
+fn find_bun() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("DOWNES_BUN") {
+        let p = PathBuf::from(p);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    let mut cands = vec![
+        PathBuf::from("/opt/homebrew/bin/bun"),
+        PathBuf::from("/usr/local/bin/bun"),
+    ];
+    cands.push(home().join(".bun/bin/bun"));
+    cands.into_iter().find(|p| p.exists())
+}
+
 fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     let fork = fork_opencode();
-    // Layer the curriculum config on top of the user's normal opencode
-    // environment. We deliberately do NOT isolate XDG or use --pure: the
-    // studio shares the user's real providers, models, and connections and
-    // can save new ones (auth persists globally), matching plain opencode.
-    // OPENCODE_CONFIG merges our skills/agent/METHOD; project config stays
-    // off so a downloaded course cannot smuggle its own config.
-    Command::new("bun")
-        .args([
+    let port_s = port.to_string();
+
+    // Prefer the compiled fork binary: it needs no runtime on PATH and idles
+    // near 0% CPU. Fall back to running from source under an absolutely
+    // resolved bun (dev machines that have not built the binary yet).
+    let bin = compiled_bin(&fork);
+    let mut cmd = if !bin.is_empty() {
+        let mut c = Command::new(&bin);
+        c.args(["serve", "--hostname", "127.0.0.1", "--port", &port_s]);
+        c
+    } else {
+        let bun = find_bun()?;
+        let mut c = Command::new(bun);
+        c.args([
             "run",
             "--conditions=browser",
             "src/index.ts",
@@ -103,15 +129,53 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
             "--hostname",
             "127.0.0.1",
             "--port",
-            &port.to_string(),
-        ])
-        .current_dir(&fork)
+            &port_s,
+        ]);
+        c
+    };
+
+    // Layer the curriculum config on top of the user's normal opencode
+    // environment. We deliberately do NOT isolate XDG or use --pure: the
+    // studio shares the user's real providers, models, and connections and
+    // can save new ones (auth persists globally), matching plain opencode.
+    // OPENCODE_CONFIG merges our skills/agent/METHOD; project config stays
+    // off so a downloaded course cannot smuggle its own config.
+    cmd.current_dir(&fork)
         .env("OPENCODE_SERVER_PASSWORD", password)
         .env("OPENCODE_CONFIG", studio.join("opencode.json"))
         .env("OPENCODE_DISABLE_PROJECT_CONFIG", "1")
-        .env("OPENCODE_DISABLE_AUTOUPDATE", "1")
-        .spawn()
-        .ok()
+        .env("OPENCODE_DISABLE_AUTOUPDATE", "1");
+
+    // Give the child real stdio. A bundle launched from Finder/Dock inherits
+    // no usable stdout/stderr, and the sidecar dies the moment it logs its
+    // "listening on…" line. Under `tauri dev` it inherits the terminal, so
+    // this failure is invisible there and fatal in every shipped install.
+    // The log doubles as the first place to look when a studio comes up blank.
+    let log_dir = studio.join(".downes");
+    let _ = fs::create_dir_all(&log_dir);
+    match fs::File::create(log_dir.join("sidecar.log")).and_then(|f| {
+        let err = f.try_clone()?;
+        Ok((f, err))
+    }) {
+        Ok((out, err)) => {
+            cmd.stdout(out).stderr(err);
+        }
+        Err(_) => {
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        }
+    }
+    cmd.stdin(std::process::Stdio::null());
+
+    match cmd.spawn() {
+        Ok(child) => Some(child),
+        Err(e) => {
+            // Do not swallow this: a dead sidecar is the difference between a
+            // working studio and a blank window.
+            eprintln!("downes: failed to start opencode sidecar: {e}");
+            None
+        }
+    }
 }
 
 #[tauri::command]

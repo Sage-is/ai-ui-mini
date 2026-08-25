@@ -1,6 +1,6 @@
 import { onCleanup, onMount } from "solid-js"
 import * as api from "./api"
-import { createEngine, type TerminalEngine } from "./terminal-engine"
+import { createEngine, themeFromCss, type TerminalEngine } from "./terminal-engine"
 import { terminalWriter } from "./terminal-writer"
 
 // Runs the branded opencode TUI (a server PTY) inside a web terminal.
@@ -91,6 +91,12 @@ export default function Terminal(props: { onActivity?: () => void }) {
     const ro = new ResizeObserver(() => fitNow())
     ro.observe(host)
     onCleanup(() => ro.disconnect())
+
+    // Repaint the emulator when the app theme flips, so the terminal pane
+    // never sits at odds with the chrome. data-theme is set on <html>.
+    const themeObs = new MutationObserver(() => engine?.setTheme(themeFromCss()))
+    themeObs.observe(document.documentElement, { attributeFilter: ["data-theme"] })
+    onCleanup(() => themeObs.disconnect())
     if (typeof document !== "undefined" && document.fonts) {
       document.fonts.ready.then(() => fitNow())
     }
