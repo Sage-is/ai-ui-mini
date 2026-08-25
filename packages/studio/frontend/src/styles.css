@@ -1,42 +1,119 @@
-/* Downes studio — sage.is mini palette. Local CSS (CSP blocks CDNs);
-   startr.style conventions can be vendored here later. */
+/* Downes studio — layered on the vendored startr.style sheet, aligned to the
+   Sage.is AI-UI design system.
+
+   Load order (src/index.tsx): startr.style.css, then this file. Same order
+   AI-UI uses (framework, then custom.css). Ours overrides; never the reverse.
+
+   Theming: startr.style flips only four named colors under
+   [data-theme="dark"] — --white, --black, --grey, --dark-grey — and every
+   derived token re-resolves through color-mix(). We follow that discipline:
+   surfaces below are mixes of --background/--text-main, so light and dark
+   both fall out of the same six declarations instead of two parallel
+   palettes that drift apart. The attribute is set in index.html before the
+   body parses, so there is no flash. */
+
 :root {
-  --paper: #141915;
-  --surface: #1b211c;
-  --surface-2: #222a24;
-  --ink: #e8ece7;
-  --muted: #9aa69e;
-  --line: #2a322c;
-  --sage: #7fb694;
-  --sage-ink: #223027;
-  --amber: #d9a54c;
-  --danger: #d07a66;
-  --radius: 8px;
+  /* AI-UI sets html to 120%; every rem in that product is ~19.2px. Matching
+     it is what makes 0.8rem body / 0.6rem label read at the same size here
+     as there. Do not "simplify" this to 100% without rescaling every rem. */
+  font-size: 120%;
+
+  /* Brand accent — sampled from the Sage.is hexagon mark, which is also the
+     source of the app icon (indigo, fading to teal). AI-UI's own --primary is
+     purple; the studio deliberately takes the mark's blue instead so the
+     window and its Dock icon agree. */
+  --accent: hsl(225 55% 40%);
+  --accent-ink: #ffffff;
+  --accent-2: hsl(174 55% 40%); /* the teal end of the icon gradient */
+
+  /* Surfaces derived from startr.style's flipping base, so dark mode needs
+     no second palette. */
+  --surface: color-mix(in srgb, var(--background) 94%, var(--text-main) 6%);
+  --surface-2: color-mix(in srgb, var(--background) 88%, var(--text-main) 12%);
+  --line: color-mix(in srgb, var(--background) 84%, var(--text-main) 16%);
+  --ink: var(--text-main);
+  --muted: var(--text-muted);
+
+  /* AI-UI component conventions */
+  --radius-app: 0.5rem;
+  --radius-pill: 9999px;
+  --tn-app: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+
   --mono: "SF Mono", "Cascadia Code", Menlo, monospace;
-  --sans: "Avenir Next", "Seravek", system-ui, sans-serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
   --serif: "Charter", "Iowan Old Style", Georgia, serif;
 }
+
+/* The accent must lift off a dark ground; the deep indigo that reads well on
+   white goes muddy on navy. Only the accent trio changes. */
+[data-theme="dark"] {
+  --accent: hsl(225 78% 72%);
+  --accent-ink: hsl(225 60% 12%);
+  --accent-2: hsl(174 62% 60%);
+}
+
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
-body { background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 15px; }
+body {
+  background: var(--background);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  transition: background-color var(--tn-app), color var(--tn-app);
+}
+
+/* startr.style ships filled purple buttons and its own form sizing. AI-UI
+   neutralises both in custom.css; so do we, or every control in the studio
+   inherits a brand that is not ours. */
+button {
+  -webkit-appearance: none;
+  background: none;
+  box-shadow: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 
 .app { display: grid; grid-template-columns: 240px 6px 1fr 6px 34%; grid-template-rows: 44px 1fr; height: 100%; }
-.handle { background: var(--line); cursor: col-resize; }
-.handle:hover, .handle:active { background: var(--sage); }
-.topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: .6rem;
-  padding: 0 .9rem; border-bottom: 1px solid var(--line); background: var(--surface); }
+.handle { background: var(--line); cursor: col-resize; transition: background-color var(--tn-app); }
+.handle:hover, .handle:active { background: var(--accent); }
+
+.topbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: .6rem;
+  padding: 0 .9rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
 .brand { font-weight: 700; letter-spacing: -.01em; }
 .brand small { color: var(--muted); font-weight: 500; margin-left: .4rem; }
-.status { margin-left: auto; font-family: var(--mono); font-size: .72rem; color: var(--muted); }
-.status.ok { color: var(--sage); }
-.status.err { color: var(--danger); }
+.status { margin-left: auto; font-family: var(--mono); font-size: .6rem; color: var(--muted); }
+.status.ok { color: var(--accent); }
+.status.err { color: var(--secondary); }
+
+/* Theme toggle. A bare <button> loses --c to the UA's system color keywords
+   (documented startr.style footgun), so colour is set here, not inline. */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; margin-left: .5rem;
+  border: 1px solid var(--line); border-radius: var(--radius-pill);
+  background: var(--background);
+  color: var(--ink) !important;
+  transition: background-color var(--tn-app), border-color var(--tn-app);
+}
+.theme-toggle:hover { background: var(--surface-2); border-color: var(--accent); }
+.theme-toggle svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.theme-toggle .fill-moon { fill: currentColor; stroke: none; }
 
 .pane { overflow: auto; padding: .8rem; }
 .files { border-right: 1px solid var(--line); background: var(--surface); }
 .chat { border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-.term { flex: 1; min-height: 0; padding: .4rem; background: #141915; }
+.term { flex: 1; min-height: 0; padding: .4rem; background: var(--background); }
 .term .xterm, .term .xterm-viewport { height: 100% !important; }
-.viewer { background: var(--paper); position: relative; }
+.viewer { background: var(--background); position: relative; }
 .viewer.flush { padding: 0; }
 .htmlframe { width: 100%; height: 100%; min-height: 480px; border: 0; background: #fff; }
 
@@ -44,82 +121,83 @@ body { background: var(--paper); color: var(--ink); font-family: var(--sans); fo
 .viewer-tools {
   position: absolute; top: .5rem; right: .6rem; z-index: 5;
   display: flex; gap: .25rem; align-items: flex-start;
-  opacity: .55; transition: opacity .12s;
+  opacity: .55; transition: opacity var(--tn-app);
 }
 .viewer:hover .viewer-tools { opacity: 1; }
 .vtool {
-  font-size: 14px; line-height: 1; width: 28px; height: 26px;
+  font-size: .75rem; line-height: 1; width: 28px; height: 26px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--surface); color: var(--fg, #fbfbfb);
-  border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,.08);
+  background: var(--surface); color: var(--ink) !important;
+  border: 1px solid var(--line); border-radius: var(--radius-app);
+  box-shadow: var(--button-shadow);
+  transition: background-color var(--tn-app), border-color var(--tn-app);
 }
-.vtool:hover { background: var(--surface-2); }
-.vtool.caret { width: 18px; margin-left: -2px; border-left: 0; border-radius: 0 6px 6px 0; }
+.vtool:hover { background: var(--surface-2); border-color: var(--accent); }
+.vtool.caret { width: 18px; margin-left: -2px; border-left: 0; border-radius: 0 var(--radius-app) var(--radius-app) 0; }
 .copywrap { position: relative; display: inline-flex; }
-.copywrap .vtool:first-child { border-radius: 6px 0 0 6px; }
+.copywrap .vtool:first-child { border-radius: var(--radius-app) 0 0 var(--radius-app); }
 .copymenu {
   position: absolute; top: 30px; right: 0; z-index: 6;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.16); overflow: hidden; min-width: 130px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-app);
+  box-shadow: var(--accent-shadow); overflow: hidden; min-width: 130px;
 }
-.copymenu div { padding: .45rem .7rem; font-size: .82rem; cursor: pointer; white-space: nowrap; }
+.copymenu div { padding: .45rem .7rem; font-size: .68rem; cursor: pointer; white-space: nowrap; }
 .copymenu div:hover { background: var(--surface-2); }
-.copymenu div.on { color: var(--sage); font-weight: 600; }
+.copymenu div.on { color: var(--accent); font-weight: 600; }
 
 /* in-app fullscreen overlay for HTML artifacts */
 .fs-overlay { position: fixed; inset: 0; z-index: 50; background: #fff; }
 .fs-frame { width: 100%; height: 100%; border: 0; }
 .fs-close {
   position: fixed; top: .6rem; right: .8rem; z-index: 51;
-  width: 32px; height: 32px; font-size: 15px; cursor: pointer;
-  background: rgba(20,20,20,.72); color: #fff; border: 0; border-radius: 50%;
+  width: 32px; height: 32px; font-size: .8rem; cursor: pointer;
+  background: rgba(20, 20, 20, .72); color: #fff !important;
+  border: 0; border-radius: var(--radius-pill);
 }
-.fs-close:hover { background: rgba(20,20,20,.9); }
+.fs-close:hover { background: rgba(20, 20, 20, .9); }
 
-.pane h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;
-  color: var(--sage); margin: .2rem 0 .8rem; }
+.pane h2 {
+  font-size: .6rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--accent); margin: .2rem 0 .8rem; font-weight: 600;
+}
 
 /* file tree */
-.node { display: flex; align-items: center; gap: .4rem; padding: .22rem .4rem;
-  border-radius: 6px; cursor: pointer; font-size: .84rem; color: var(--ink); white-space: nowrap; }
+.node {
+  display: flex; align-items: center; gap: .4rem; padding: .22rem .4rem;
+  border-radius: var(--radius-app); cursor: pointer; font-size: .7rem;
+  color: var(--ink); white-space: nowrap;
+  transition: background-color var(--tn-app);
+}
 .node:hover { background: var(--surface-2); }
-.node.active { background: var(--sage-ink); color: var(--sage); }
+.node.active { background: color-mix(in srgb, var(--accent) 18%, var(--background) 82%); color: var(--accent); }
 .node .ic { width: 1rem; text-align: center; opacity: .8; }
 .node.dir { font-weight: 600; }
 .indent { margin-left: .8rem; border-left: 1px solid var(--line); padding-left: .2rem; }
 
-/* chat */
-.messages { flex: 1; overflow: auto; padding: .8rem; display: flex; flex-direction: column; gap: .7rem; }
-.msg { max-width: 92%; padding: .55rem .7rem; border-radius: var(--radius); font-size: .9rem; line-height: 1.5; }
-.msg.user { align-self: flex-end; background: var(--sage-ink); color: var(--ink); }
-.msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); }
-.msg.tool { align-self: flex-start; font-family: var(--mono); font-size: .74rem; color: var(--muted);
-  background: transparent; border: 1px dashed var(--line); padding: .3rem .5rem; }
-.composer { display: flex; gap: .5rem; padding: .7rem; border-top: 1px solid var(--line); background: var(--surface); }
-.composer input { flex: 1; background: var(--paper); color: var(--ink); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: .55rem .7rem; font: inherit; }
-.composer input::placeholder { color: var(--muted); }
-.composer button { background: var(--sage); color: #0d130f; border: 0; border-radius: var(--radius);
-  padding: 0 1rem; font-weight: 700; cursor: pointer; }
-.composer button:disabled { opacity: .5; cursor: default; }
-
 /* markdown / artifact viewer */
-.md { font-family: var(--serif); font-size: 15px; line-height: 1.65; max-width: 62ch; }
+.md { font-family: var(--serif); font-size: .8rem; line-height: 1.65; max-width: 62ch; }
 .md h1, .md h2, .md h3 { font-family: var(--sans); line-height: 1.25; }
-.md h1 { font-size: 1.7rem; } .md h2 { font-size: 1.3rem; margin-top: 1.4rem; }
-.md code { font-family: var(--mono); font-size: .85em; background: var(--surface-2); padding: .1em .35em; border-radius: 4px; }
-.md pre { background: var(--surface-2); padding: .8rem; border-radius: var(--radius); overflow: auto; }
-.md table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+.md h1 { font-size: 1.35rem; }
+.md h2 { font-size: 1.05rem; margin-top: 1.4rem; }
+.md code {
+  font-family: var(--mono); font-size: .85em; background: var(--surface-2);
+  padding: .1em .35em; border-radius: 4px;
+}
+.md pre { background: var(--surface-2); padding: .8rem; border-radius: var(--radius-app); overflow: auto; }
+.md table { border-collapse: collapse; width: 100%; font-size: .72rem; }
 .md th, .md td { border: 1px solid var(--line); padding: .4rem .6rem; text-align: left; }
 .md th { background: var(--surface); color: var(--muted); }
-.md a { color: var(--sage); }
+.md a { color: var(--accent); }
 .empty { color: var(--muted); font-style: italic; padding: 2rem; text-align: center; }
 
 /* reveal-lite slide viewer */
 .deck { display: flex; flex-direction: column; gap: 1rem; }
-.slide { border: 1px solid var(--line); border-radius: var(--radius); padding: 1.2rem 1.4rem;
-  background: var(--surface); min-height: 8rem; }
-.slide h2 { margin-top: 0; color: var(--sage); }
-.slide .notes { margin-top: .8rem; padding-top: .6rem; border-top: 1px dashed var(--line);
-  font-family: var(--mono); font-size: .74rem; color: var(--muted); }
+.slide {
+  border: 1px solid var(--line); border-radius: var(--radius-app);
+  padding: 1.2rem 1.4rem; background: var(--surface); min-height: 8rem;
+}
+.slide h2 { margin-top: 0; color: var(--accent); }
+.slide .notes {
+  margin-top: .8rem; padding-top: .6rem; border-top: 1px dashed var(--line);
+  font-family: var(--mono); font-size: .62rem; color: var(--muted);
+}

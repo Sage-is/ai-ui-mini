@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    The studio spawns the opencode sidecar, which is a Bun single-file
+    executable: a JIT runtime, ~137 MB, ad-hoc signed.
+
+    Without these entitlements a GUI-launched bundle hangs its child in
+    dyld4::prepare and never starts the sidecar — the window comes up with
+    "sidecar unreachable" and no error anywhere. The failure is invisible in
+    `tauri dev` and when running Contents/MacOS/downes-studio from a
+    terminal, because neither goes through LaunchServices; it appears only
+    in a real double-click launch, which is how every teacher will start it.
+
+    allow-jit + allow-unsigned-executable-memory: Bun's JavaScriptCore JIT.
+    disable-library-validation: lets the app spawn/load a binary signed with
+    a different (ad-hoc) identity than its own.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

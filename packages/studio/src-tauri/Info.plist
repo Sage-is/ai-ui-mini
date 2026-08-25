@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Merged into the generated Info.plist by Tauri.
+
+    The studio spawns the opencode sidecar with its working directory set to
+    the fork checkout. In development that checkout lives under ~/Documents,
+    which macOS protects with TCC. A GUI (LaunchServices) launch has its own
+    TCC identity and no inherited grant, so the child blocks in getcwd() and
+    the sidecar never starts — the window shows "sidecar unreachable" with
+    nothing in any log. `tauri dev` and running Contents/MacOS/downes-studio
+    from a terminal both inherit Terminal's existing grant, so the failure is
+    invisible there and appears only on a real double-click.
+
+    Declaring the usage makes macOS prompt instead of silently blocking.
+
+    Shipping note: a released build should not read the user's ~/Documents at
+    all. The sidecar belongs inside the app bundle as a Tauri sidecar (board
+    card: "compiled binary into packaging/CI"); once it does, this key covers
+    only the case where a teacher keeps their studio in Documents.
+  -->
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Downes needs access to load its curriculum engine and to read and write your course files.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Downes needs access if you keep your studio folder on the Desktop.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Downes needs access if you open course files from Downloads.</string>
+</dict>
+</plist>
