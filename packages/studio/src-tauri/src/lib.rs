@@ -53,7 +53,13 @@ fn engine_bin(fork: &Path) -> String {
         cands.push(PathBuf::from(p));
     }
 
-    if let Ok(me) = std::env::current_exe() {
+    // Canonicalize first. When the app is reached through a symlink — the
+    // normal way to get a Homebrew-installed .app into /Applications —
+    // current_exe() reports the SYMLINK path, not the real one. Walking up
+    // from there finds no libexec, and resolution silently falls through to
+    // the developer-checkout candidate below: a false pass on this machine
+    // and a dead app on any other.
+    if let Ok(me) = std::env::current_exe().map(|p| p.canonicalize().unwrap_or(p)) {
         if let Some(dir) = me.parent() {
             // Tauri externalBin / a plain sibling drop: Contents/MacOS/<exe>
             cands.push(dir.join(exe));
@@ -81,6 +87,87 @@ fn engine_bin(fork: &Path) -> String {
         .find(|p| p.is_file())
         .map(|p| p.canonicalize().unwrap_or(p).to_string_lossy().into())
         .unwrap_or_default()
+}
+
+// The studio template shipped inside the payload: opencode.json, the .downes
+// skills/METHOD/prompts, and the courses README. Found the same way the
+// engine is — relative to this executable, never a source checkout.
+fn studio_template() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("DOWNES_TEMPLATE") {
+        let p = PathBuf::from(p);
+        if p.join("opencode.json").is_file() {
+            return Some(p);
+        }
+    }
+    let me = std::env::current_exe().ok()?;
+    let me = me.canonicalize().unwrap_or(me);
+    let mut up = me.parent()?.to_path_buf();
+    for _ in 0..6 {
+        let cand = up.join("studio");
+        if cand.join("opencode.json").is_file() {
+            return Some(cand);
+        }
+        if !up.pop() {
+            break;
+        }
+    }
+    None
+}
+
+fn copy_tree(src: &Path, dst: &Path, overwrite: bool) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_tree(&from, &to, overwrite)?;
+        } else if overwrite || !to.exists() {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+// Create the studio on first run.
+//
+// Previously only launcher/downes.sh did this, by shelling out to
+// install_studio.sh. Clicking the app skipped it entirely, so on a machine
+// where ~/Downes did not already exist the studio came up empty, with no
+// README, and OPENCODE_CONFIG pointed at an opencode.json that was never
+// written — the engine then had no config and the window reported "sidecar
+// unreachable". Invisible on any machine that had already run the launcher.
+//
+// Done in Rust rather than by calling the shell script: the app must not
+// depend on bash, rsync or git being present, and must work when only the
+// .app was copied.
+//
+// Additive, never destructive. Teacher work is never touched: courses/ and
+// any existing README are left alone. opencode.json and the .downes engine
+// files ARE refreshed, so an upgrade ships new skills and permission fixes.
+fn ensure_studio(studio: &Path) {
+    let _ = fs::create_dir_all(studio.join("courses"));
+
+    let Some(tpl) = studio_template() else {
+        return; // dev checkout without a staged template; engine may still run
+    };
+
+    let cfg = studio.join("opencode.json");
+    if let Err(e) = fs::copy(tpl.join("opencode.json"), &cfg) {
+        eprintln!("downes: could not write {}: {e}", cfg.display());
+    }
+
+    // Engine-owned files: refresh on upgrade.
+    let dot = tpl.join(".downes");
+    if dot.is_dir() {
+        let _ = copy_tree(&dot, &studio.join(".downes"), true);
+    }
+
+    // Teacher-facing: seed once, never overwrite.
+    let readme = studio.join("courses/README.md");
+    if !readme.exists() {
+        let _ = fs::copy(tpl.join("courses-README.md"), &readme);
+    }
 }
 
 struct AppState {
@@ -373,6 +460,9 @@ pub fn run() {
     let studio = studio_dir();
     let port = free_port();
     let password = random_password();
+    // Must run before the sidecar: it writes the opencode.json that
+    // OPENCODE_CONFIG points at.
+    ensure_studio(&studio);
     let child = spawn_sidecar(&studio, port, &password);
     let server = ServerInfo {
         url: format!("http://127.0.0.1:{}", port),
