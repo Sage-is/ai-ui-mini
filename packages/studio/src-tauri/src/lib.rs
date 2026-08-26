@@ -146,11 +146,15 @@ fn copy_tree(src: &Path, dst: &Path, overwrite: bool) -> std::io::Result<()> {
 // any existing README are left alone. opencode.json and the .downes engine
 // files ARE refreshed, so an upgrade ships new skills and permission fixes.
 fn ensure_studio(studio: &Path) {
-    let _ = fs::create_dir_all(studio.join("courses"));
+    // The workspace itself always exists — it is the engine's cwd.
+    let _ = fs::create_dir_all(studio);
 
     let Some(tpl) = studio_template() else {
-        return; // dev checkout without a staged template; engine may still run
+        // No curriculum template: this is the bare platform. Stop here rather
+        // than inventing a courses/ folder, which is a Downes concept.
+        return;
     };
+    let _ = fs::create_dir_all(studio.join("courses"));
 
     let cfg = studio.join("opencode.json");
     if let Err(e) = fs::copy(tpl.join("opencode.json"), &cfg) {
@@ -179,10 +183,40 @@ fn home() -> PathBuf {
     std::env::var("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
+// Which product this bundle is. One Rust binary ships in two apps — Downes
+// (curriculum agent, AGPL payload) and Sage.is mini (bare platform, MIT) —
+// which differ only in bundle metadata, so the difference cannot come from
+// cfg!(). It comes from a marker staged beside the app in the payload.
+//
+// Absent marker means Downes, so installs that predate this keep working.
+fn product_workspace() -> String {
+    let mut cands: Vec<PathBuf> = Vec::new();
+    if let Ok(me) = std::env::current_exe().map(|p| p.canonicalize().unwrap_or(p)) {
+        if let Some(dir) = me.parent() {
+            let mut up = dir.to_path_buf();
+            for _ in 0..6 {
+                cands.push(up.join("product"));
+                if !up.pop() {
+                    break;
+                }
+            }
+        }
+    }
+    for c in cands {
+        if let Ok(s) = fs::read_to_string(&c) {
+            let name = s.trim();
+            if !name.is_empty() {
+                return name.to_string();
+            }
+        }
+    }
+    "Downes".into()
+}
+
 fn studio_dir() -> PathBuf {
     std::env::var("DOWNES_STUDIO")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| home().join("Downes"))
+        .unwrap_or_else(|_| home().join(product_workspace()))
 }
 
 // The fork's opencode package (run from source in dev).
@@ -281,9 +315,16 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     // OPENCODE_CONFIG merges our skills/agent/METHOD; project config stays
     // off so a downloaded course cannot smuggle its own config.
     cmd.env("OPENCODE_SERVER_PASSWORD", password)
-        .env("OPENCODE_CONFIG", studio.join("opencode.json"))
         .env("OPENCODE_DISABLE_PROJECT_CONFIG", "1")
         .env("OPENCODE_DISABLE_AUTOUPDATE", "1");
+
+    // Only name a config that exists. Downes ships one; the bare Sage.is mini
+    // platform does not, and pointing the engine at a missing file makes it
+    // complain on every launch.
+    let cfg = studio.join("opencode.json");
+    if cfg.is_file() {
+        cmd.env("OPENCODE_CONFIG", &cfg);
+    }
 
     // Give the child real stdio. A bundle launched from Finder/Dock inherits
     // no usable stdout/stderr, and the sidecar dies the moment it logs its

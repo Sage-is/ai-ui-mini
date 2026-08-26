@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Sage.is mini",
+  "identifier": "is.sage.mini",
+  "app": {
+    "windows": [
+      {
+        "title": "SAGE.ISmini"
+      }
+    ]
+  },
+  "bundle": {
+    "icon": [
+      "icons-mini/32x32.png",
+      "icons-mini/128x128.png",
+      "icons-mini/128x128@2x.png",
+      "icons-mini/icon.icns",
+      "icons-mini/icon.ico"
+    ]
+  }
+}
