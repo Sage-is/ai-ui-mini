@@ -1,0 +1,13 @@
+path,reason
+node_modules,dependency cache
+dist,build output — compiled engine binaries
+target,rust build output
+.turbo,turbo cache
+packages/web,upstream marketing site — not ours
+packages/desktop,upstream Electron app — superseded by packages/studio
+packages/console,upstream hosted console — not shipped in mini
+packages/enterprise,upstream enterprise package — not shipped in mini
+packages/storybook,upstream component sandbox
+sdks,generated SDK clients
+cloud,upstream infrastructure
+.github/workflows,upstream release pipeline — repo-guarded to anomalyco/opencode
