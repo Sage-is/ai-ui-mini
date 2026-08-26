@@ -21,20 +21,66 @@ struct ServerInfo {
     bin: String, // compiled TUI binary if built, else "" (fall back to source)
 }
 
-// The compiled fork binary, if `bun run build` has produced it. Running the
-// binary idles near 0% CPU; running from source via bun keeps the runtime
-// hot. Prefer the binary; the frontend/launcher fall back to source.
-fn compiled_bin(fork: &Path) -> String {
+// Platform/arch fragment matching the names `script/build.ts` emits:
+// opencode-darwin-arm64, opencode-linux-x64, opencode-windows-x64, …
+fn engine_target() -> String {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        "windows" => "windows",
+        other => other,
+    };
     let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
-    let cand = fork
-        .join("dist")
-        .join(format!("opencode-darwin-{arch}"))
-        .join("bin/opencode");
-    if cand.exists() {
-        cand.to_string_lossy().into()
-    } else {
-        String::new()
+    format!("opencode-{os}-{arch}")
+}
+
+fn engine_exe() -> &'static str {
+    if cfg!(target_os = "windows") { "opencode.exe" } else { "opencode" }
+}
+
+// Locate the compiled engine.
+//
+// Resolution is INSTALL-RELATIVE first and developer-checkout last. An
+// installed copy must never depend on a source tree existing: under Homebrew
+// the payload lands in `libexec/` next to the app, and under a bundled build
+// the engine sits beside this executable. Both are derived from
+// current_exe(), never from the working directory — a Finder launch has cwd
+// `/`, so any cwd-relative search silently finds nothing.
+fn engine_bin(fork: &Path) -> String {
+    let exe = engine_exe();
+    let mut cands: Vec<PathBuf> = Vec::new();
+
+    if let Ok(p) = std::env::var("DOWNES_ENGINE") {
+        cands.push(PathBuf::from(p));
     }
+
+    if let Ok(me) = std::env::current_exe() {
+        if let Some(dir) = me.parent() {
+            // Tauri externalBin / a plain sibling drop: Contents/MacOS/<exe>
+            cands.push(dir.join(exe));
+            // Bundled as a resource: Contents/MacOS → Contents/Resources
+            cands.push(dir.join("../Resources").join(exe));
+            // Homebrew layout: libexec/Downes.app/Contents/MacOS, with the
+            // engine at libexec/bin. Walk up rather than counting "..", which
+            // is easy to get wrong and fails silently when it is.
+            let mut up = dir.to_path_buf();
+            for _ in 0..5 {
+                cands.push(up.join("bin").join(exe));
+                cands.push(up.join(engine_target()).join("bin").join(exe));
+                if !up.pop() {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Developer checkout, last: what `bun run build` produces in the fork.
+    cands.push(fork.join("dist").join(engine_target()).join("bin").join(exe));
+
+    cands
+        .into_iter()
+        .find(|p| p.is_file())
+        .map(|p| p.canonicalize().unwrap_or(p).to_string_lossy().into())
+        .unwrap_or_default()
 }
 
 struct AppState {
@@ -113,10 +159,15 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     // Prefer the compiled fork binary: it needs no runtime on PATH and idles
     // near 0% CPU. Fall back to running from source under an absolutely
     // resolved bun (dev machines that have not built the binary yet).
-    let bin = compiled_bin(&fork);
+    let bin = engine_bin(&fork);
     let mut cmd = if !bin.is_empty() {
         let mut c = Command::new(&bin);
         c.args(["serve", "--hostname", "127.0.0.1", "--port", &port_s]);
+        // The compiled engine is self-contained and must NOT be run from the
+        // fork: on an installed copy that source tree does not exist, and
+        // spawning with a missing cwd fails outright. The studio is the
+        // correct working directory anyway — it is the project.
+        c.current_dir(studio);
         c
     } else {
         let bun = find_bun()?;
@@ -131,6 +182,8 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
             "--port",
             &port_s,
         ]);
+        // Only the from-source path needs the fork as cwd.
+        c.current_dir(&fork);
         c
     };
 
@@ -140,8 +193,7 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     // can save new ones (auth persists globally), matching plain opencode.
     // OPENCODE_CONFIG merges our skills/agent/METHOD; project config stays
     // off so a downloaded course cannot smuggle its own config.
-    cmd.current_dir(&fork)
-        .env("OPENCODE_SERVER_PASSWORD", password)
+    cmd.env("OPENCODE_SERVER_PASSWORD", password)
         .env("OPENCODE_CONFIG", studio.join("opencode.json"))
         .env("OPENCODE_DISABLE_PROJECT_CONFIG", "1")
         .env("OPENCODE_DISABLE_AUTOUPDATE", "1");
@@ -328,7 +380,7 @@ pub fn run() {
         password,
         studio: studio.to_string_lossy().into(),
         fork: fork_opencode().to_string_lossy().into(),
-        bin: compiled_bin(&fork_opencode()),
+        bin: engine_bin(&fork_opencode()),
     };
 
     tauri::Builder::default()
