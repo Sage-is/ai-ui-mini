@@ -38,6 +38,34 @@ fn engine_exe() -> &'static str {
     if cfg!(target_os = "windows") { "opencode.exe" } else { "opencode" }
 }
 
+// Where payload files can live, most specific first.
+//
+// The cask ships a self-contained .app, so everything the shell needs — engine,
+// studio template, sandbox profile, product marker — sits in Contents/Resources
+// and moves with the bundle. The walk-up entries keep the older Homebrew
+// libexec layout working, where those files are siblings of the .app.
+//
+// Always derived from current_exe(), canonicalized: a Finder launch has cwd `/`,
+// and the app is normally reached through a symlink, so anything cwd-relative or
+// un-resolved finds nothing.
+fn payload_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(me) = std::env::current_exe().map(|p| p.canonicalize().unwrap_or(p)) {
+        if let Some(dir) = me.parent() {
+            roots.push(dir.to_path_buf());
+            roots.push(dir.join("../Resources"));
+            let mut up = dir.to_path_buf();
+            for _ in 0..6 {
+                roots.push(up.clone());
+                if !up.pop() {
+                    break;
+                }
+            }
+        }
+    }
+    roots
+}
+
 // Locate the compiled engine.
 //
 // Resolution is INSTALL-RELATIVE first and developer-checkout last. An
@@ -54,30 +82,10 @@ fn engine_bin(fork: &Path) -> String {
         cands.push(PathBuf::from(p));
     }
 
-    // Canonicalize first. When the app is reached through a symlink — the
-    // normal way to get a Homebrew-installed .app into /Applications —
-    // current_exe() reports the SYMLINK path, not the real one. Walking up
-    // from there finds no libexec, and resolution silently falls through to
-    // the developer-checkout candidate below: a false pass on this machine
-    // and a dead app on any other.
-    if let Ok(me) = std::env::current_exe().map(|p| p.canonicalize().unwrap_or(p)) {
-        if let Some(dir) = me.parent() {
-            // Tauri externalBin / a plain sibling drop: Contents/MacOS/<exe>
-            cands.push(dir.join(exe));
-            // Bundled as a resource: Contents/MacOS → Contents/Resources
-            cands.push(dir.join("../Resources").join(exe));
-            // Homebrew layout: libexec/Downes.app/Contents/MacOS, with the
-            // engine at libexec/bin. Walk up rather than counting "..", which
-            // is easy to get wrong and fails silently when it is.
-            let mut up = dir.to_path_buf();
-            for _ in 0..5 {
-                cands.push(up.join("bin").join(exe));
-                cands.push(up.join(engine_target()).join("bin").join(exe));
-                if !up.pop() {
-                    break;
-                }
-            }
-        }
+    for root in payload_roots() {
+        cands.push(root.join(exe));
+        cands.push(root.join("bin").join(exe));
+        cands.push(root.join(engine_target()).join("bin").join(exe));
     }
 
     // Developer checkout, last: what `bun run build` produces in the fork.
@@ -100,19 +108,10 @@ fn studio_template() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let me = std::env::current_exe().ok()?;
-    let me = me.canonicalize().unwrap_or(me);
-    let mut up = me.parent()?.to_path_buf();
-    for _ in 0..6 {
-        let cand = up.join("studio");
-        if cand.join("opencode.json").is_file() {
-            return Some(cand);
-        }
-        if !up.pop() {
-            break;
-        }
-    }
-    None
+    payload_roots()
+        .into_iter()
+        .map(|r| r.join("studio"))
+        .find(|c| c.join("opencode.json").is_file())
 }
 
 fn copy_tree(src: &Path, dst: &Path, overwrite: bool) -> std::io::Result<()> {
@@ -191,19 +190,7 @@ fn home() -> PathBuf {
 //
 // Absent marker means Downes, so installs that predate this keep working.
 fn product_workspace() -> String {
-    let mut cands: Vec<PathBuf> = Vec::new();
-    if let Ok(me) = std::env::current_exe().map(|p| p.canonicalize().unwrap_or(p)) {
-        if let Some(dir) = me.parent() {
-            let mut up = dir.to_path_buf();
-            for _ in 0..6 {
-                cands.push(up.join("product"));
-                if !up.pop() {
-                    break;
-                }
-            }
-        }
-    }
-    for c in cands {
+    for c in payload_roots().into_iter().map(|r| r.join("product")) {
         if let Ok(s) = fs::read_to_string(&c) {
             let name = s.trim();
             if !name.is_empty() {
@@ -525,20 +512,10 @@ fn reclaim_shared_store(mine: &Path) -> Vec<String> {
 // up from the canonicalized exe. Payload layout is libexec/launcher/downes.sb
 // beside libexec/<Product>.app, so the profile travels with every install.
 fn sandbox_profile() -> Option<PathBuf> {
-    let me = std::env::current_exe()
-        .map(|p| p.canonicalize().unwrap_or(p))
-        .ok()?;
-    let mut up = me.parent()?.to_path_buf();
-    for _ in 0..6 {
-        let p = up.join("launcher").join("downes.sb");
-        if p.is_file() {
-            return Some(p);
-        }
-        if !up.pop() {
-            break;
-        }
-    }
-    None
+    payload_roots()
+        .into_iter()
+        .map(|r| r.join("launcher").join("downes.sb"))
+        .find(|p| p.is_file())
 }
 
 // The studio is the product's main surface, so leaving it unfenced while the
