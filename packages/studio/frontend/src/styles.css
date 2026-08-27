@@ -171,8 +171,31 @@ button {
 .node:hover { background: var(--surface-2); }
 .node.active { background: color-mix(in srgb, var(--accent) 18%, var(--background) 82%); color: var(--accent); }
 .node .ic { width: 1rem; text-align: center; opacity: .8; }
+.node .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .node.dir { font-weight: 600; }
 .indent { margin-left: .8rem; border-left: 1px solid var(--line); padding-left: .2rem; }
+
+/* Reveal in Finder. Shown on hover AND on the active row: a hover-only
+   control is unreachable by keyboard and by touch, so the selected row keeps
+   an entry point that needs no pointer. */
+.rowtool {
+  flex: none; opacity: 0; font-size: .68rem; line-height: 1;
+  width: 20px; height: 18px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--ink) !important;
+  border: 1px solid var(--line); border-radius: var(--radius-app);
+  cursor: pointer; transition: opacity var(--tn-app), border-color var(--tn-app);
+}
+.node:hover .rowtool, .node.active .rowtool { opacity: 1; }
+.rowtool:hover { border-color: var(--accent); background: var(--surface-2); }
+.rowtool:focus-visible { opacity: 1; outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Drop targets: a folder row, or the pane itself for the studio root. */
+.node.droptarget {
+  background: color-mix(in srgb, var(--accent) 22%, var(--background) 78%);
+  outline: 1px solid var(--accent);
+}
+.files.droproot { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* markdown / artifact viewer */
 .md { font-family: var(--serif); font-size: .8rem; line-height: 1.65; max-width: 62ch; }

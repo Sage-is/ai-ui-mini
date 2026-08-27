@@ -37,6 +37,22 @@ and most of the tree is upstream's.
   `current_exe()`)
 - [x] First-run workspace bootstrap in `~/SageMini`
 - [x] startr.style theming with light/dark toggle
+- [x] Drag files and folders INTO the sidebar — onto a folder row or the pane
+  for the studio root. Skips dotfiles and symlinks, never overwrites; 7 tests
+  cover the rules
+- [x] Reveal in Finder on every sidebar row, files and folders alike — the
+  drag-out substitute, and the only way to export a whole course folder
+- [x] Status line names the running product, so mini stops calling itself
+  Downes
+- [x] Own state root per product — `XDG_*` points at `$STUDIO/.downes/xdg`, so
+  mini, Downes and a stock opencode stop sharing one `auth.json` and database.
+  Seeded from the user's real store on first run, so isolation costs no second
+  login; `DOWNES_SHARE_STATE=1` opts out
+- [x] Layer-3 sandbox actually wired — `sandbox-exec` prefixes the engine on
+  macOS, profile ships in the payload, escape test covers the engine and not
+  just `/bin/sh`, `make sandbox_test` runs it in CI
+- [x] The app lands in `~/Applications` — the launcher links it, because
+  Homebrew `post_install` provably cannot
 
 ## In Progress / TODO
 
@@ -47,6 +63,20 @@ and most of the tree is upstream's.
 
 ## Backlog
 
+- [ ] **Drag files OUT of the sidebar** — WKWebView cannot start a native file
+  drag from a web page. Reveal in Finder ships instead (see Delivered)
+  - [ ] spike `tauri-plugin-drag` (NSDraggingSession): licence, and whether it
+    fights `dragDropEnabled`, which drop-in depends on
+
+- [ ] **A dropped file is untrusted content the agent then reads.** Drop-in is
+  the first path by which content the teacher did not author enters the studio.
+  The prompt-injection card from the panel review stops being hypothetical
+  - [ ] the import fence is filesystem-level only; nothing inspects content
+  - [ ] `AGENTS.md` in the studio is attached as instructions with no flag to
+    stop it (`session/instruction.ts:64`) — a downloaded course shipping one
+    gets its text treated as instruction. `CLAUDE.md` is the same vector and
+    IS now closed by `OPENCODE_DISABLE_CLAUDE_CODE=1`; `AGENTS.md` is not
+
 - [ ] **Multi-harness support** — run pi and deepseek-harness alongside
   opencode
   - [ ] harness switcher UI
@@ -54,12 +84,14 @@ and most of the tree is upstream's.
   - [ ] research spike on each project's runtime requirements and licence
     (unknown; licence matters because mini is MIT and bundling changes that)
 
-- [ ] **OS-level containment** — BLOCKS multi-harness
-  - [ ] wire sandbox-exec into `launcher/downes.sh` (header advertises sandbox
-    prefix but contains no sandbox-exec call)
-  - [ ] run the escape test in CI (`test/sandbox/escape-test.sh` is currently
-    orphaned from any Make target or workflow)
-  - [ ] correct any board or copy that claims sandboxing before it is true
+- [ ] **OS-level containment beyond macOS** — BLOCKS multi-harness. macOS is
+  done (see Delivered); Linux and Windows are unclaimed and the launcher
+  leaves one seam for a backend
+  - [ ] Linux: Landlock, not bubblewrap — ladder in
+    `docs/decisions/vm-containment.md`
+  - [ ] Windows: still deferred, `docs/decisions/windows-sandbox.md`
+  - [ ] `sandbox-exec` is deprecated by Apple with no removal date; App
+    Sandbox needs codesigning we do not have yet
 
 - [ ] **Folder guarantee enforcement** — 'works in one folder' currently comes
   from opencode's permission config, not the OS. A third-party TUI will not

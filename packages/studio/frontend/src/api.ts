@@ -2,7 +2,7 @@
 // V2 HTTP API directly (fetch + SSE) to avoid SDK typing churn.
 import { invoke } from "@tauri-apps/api/core"
 
-export type ServerInfo = { url: string; username: string; password: string; studio: string; fork: string; bin: string }
+export type ServerInfo = { url: string; username: string; password: string; studio: string; fork: string; bin: string; product: string }
 
 let info: ServerInfo | null = null
 

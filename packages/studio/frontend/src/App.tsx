@@ -17,6 +17,13 @@ function externalLinks(e: MouseEvent) {
   }
 }
 
+type ImportReport = {
+  imported: number
+  skipped_hidden: number
+  skipped_links: number
+  renamed: number
+}
+
 export default function App() {
   const [status, setStatus] = createSignal("starting sidecar…")
   const [ready, setReady] = createSignal(false)
@@ -24,6 +31,11 @@ export default function App() {
   const [expanded, setExpanded] = createSignal<Record<string, Node[]>>({})
   const [selected, setSelected] = createSignal<string>()
   const [content, setContent] = createSignal("")
+  // null = nothing hovering, "" = the studio root, otherwise a folder path.
+  const [dropTarget, setDropTarget] = createSignal<string | null>(null)
+  // One binary ships as two products, so the idle label comes from the running
+  // install rather than being baked in as "Downes".
+  const [readyLabel, setReadyLabel] = createSignal("ready")
 
   const refreshRoot = async () => {
     try {
@@ -45,11 +57,57 @@ export default function App() {
     refreshTimer = window.setTimeout(refreshRoot, 600)
   }
 
+  // ---- dropping files in ------------------------------------------------
+  // Say what an import did, then hand the status line back. One transient
+  // message does not warrant a toast component.
+  let statusTimer: number | undefined
+  const flashStatus = (msg: string) => {
+    clearTimeout(statusTimer)
+    setStatus(msg)
+    statusTimer = window.setTimeout(() => setStatus(readyLabel()), 6000)
+  }
+
+  // Which sidebar row is under the cursor. The drop payload gives physical
+  // pixels; the DOM works in CSS pixels, so scale first and then let
+  // elementFromPoint resolve the row rather than doing layout arithmetic.
+  // Returns null when the point is outside the sidebar entirely — a drop on
+  // the terminal or the viewer should do nothing, not something surprising.
+  const rowAt = (pos: { x: number; y: number }): string | null => {
+    const r = window.devicePixelRatio || 1
+    const el = document.elementFromPoint(pos.x / r, pos.y / r)
+    if (!el?.closest(".files")) return null
+    const dir = el.closest(".node.dir") as HTMLElement | null
+    return dir?.dataset.path ?? "" // "" = the studio root
+  }
+
+  const importPaths = async (dest: string, paths: string[]) => {
+    try {
+      const r = await invoke<ImportReport>("import_paths", { dest, sources: paths })
+      const bits = [`Imported ${r.imported} file${r.imported === 1 ? "" : "s"}`]
+      if (r.renamed) bits.push(`${r.renamed} renamed, nothing overwritten`)
+      const skipped = r.skipped_hidden + r.skipped_links
+      if (skipped) bits.push(`${skipped} hidden or linked file${skipped === 1 ? "" : "s"} skipped`)
+      flashStatus(bits.join(" · "))
+      // Open the folder it landed in, so the teacher can see where it went.
+      if (dest && !expanded()[dest]) {
+        try {
+          setExpanded({ ...expanded(), [dest]: await invoke<Node[]>("list_dir", { rel: dest }) })
+        } catch {}
+      }
+      refreshRoot()
+    } catch (e) {
+      flashStatus(`Could not import: ${e}`)
+    }
+  }
+
   onMount(async () => {
     const ok = await api.waitReady()
     if (!ok) return setStatus("sidecar unreachable")
     setReady(true)
-    setStatus("ready · Downes")
+    try {
+      setReadyLabel(`ready · ${(await api.server()).product}`)
+    } catch {}
+    setStatus(readyLabel())
     refreshRoot()
     // Poll so the browser always reflects what the TUI writes, activity or not.
     const iv = window.setInterval(refreshRoot, 2000)
@@ -79,6 +137,27 @@ export default function App() {
     }
     window.addEventListener("message", onMsg)
     onCleanup(() => window.removeEventListener("message", onMsg))
+
+    // Files dragged from Finder. Tauri owns the drop (dragDropEnabled is on by
+    // default), so no HTML5 drag events fire here — this listener is the only
+    // way the paths reach us, and they arrive as real absolute paths.
+    let unlistenDrop: (() => void) | undefined
+    getCurrentWebview()
+      .onDragDropEvent((e) => {
+        const p = e.payload
+        if (p.type === "enter" || p.type === "over") {
+          setDropTarget(rowAt(p.position))
+        } else if (p.type === "leave") {
+          setDropTarget(null)
+        } else if (p.type === "drop") {
+          const dest = rowAt(p.position)
+          setDropTarget(null)
+          if (dest === null) return // dropped outside the sidebar
+          importPaths(dest, p.paths)
+        }
+      })
+      .then((u) => (unlistenDrop = u))
+    onCleanup(() => unlistenDrop?.())
 
     // Esc leaves the fullscreen HTML overlay.
     const onEsc = (e: KeyboardEvent) => {
@@ -169,14 +248,28 @@ export default function App() {
     runCopy(mode)
   }
 
+  // Reveal, rather than drag-out: WKWebView will not let a web page start a
+  // native file drag, so Finder becomes the drag source instead. It lives on
+  // the row and not the viewer toolbar because a folder never reaches the
+  // viewer, and a whole course folder is what teachers want to hand over.
+  const reveal = (e: MouseEvent, n: Node) => {
+    e.stopPropagation() // the row click opens the file; reveal must not also
+    invoke("reveal_in_finder", { rel: n.path }).catch(() => {})
+  }
+
   const TreeRow = (p: { n: Node }) => (
     <div>
       <div
         class={`node ${p.n.dir ? "dir" : ""} ${selected() === p.n.path ? "active" : ""}`}
+        classList={{ droptarget: p.n.dir && dropTarget() === p.n.path }}
+        data-path={p.n.path}
         onClick={() => (p.n.dir ? toggleDir(p.n) : openFile(p.n))}
       >
         <span class="ic">{p.n.dir ? (expanded()[p.n.path] ? "▾" : "▸") : "·"}</span>
-        <span>{p.n.name}</span>
+        <span class="name">{p.n.name}</span>
+        <button class="rowtool" title="Reveal in Finder" onClick={(e) => reveal(e, p.n)}>
+          ⤴
+        </button>
       </div>
       <Show when={expanded()[p.n.path]}>
         <div class="indent">
@@ -218,9 +311,12 @@ export default function App() {
         <ThemeToggle />
       </div>
 
-      <div class="pane files">
+      <div class="pane files" classList={{ droproot: dropTarget() === "" }}>
         <h2>Studio</h2>
-        <Show when={tree().length} fallback={<div class="empty">Empty studio.</div>}>
+        <Show
+          when={tree().length}
+          fallback={<div class="empty">Empty studio. Drop files here to add them.</div>}
+        >
           <For each={tree()}>{(n) => <TreeRow n={n} />}</For>
         </Show>
       </div>
