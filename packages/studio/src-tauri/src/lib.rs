@@ -330,20 +330,41 @@ fn find_bun() -> Option<PathBuf> {
 // The launcher refuses that combination outright. A GUI has no terminal to
 // refuse into and a blank window is worse than a working one, so the studio
 // keeps isolation instead and records the decision in sidecar.log. Returns the
-// line to log.
-fn isolate_state(cmd: &mut Command, studio: &Path) -> &'static str {
+// lines to log.
+fn isolate_state(cmd: &mut Command, studio: &Path) -> Vec<String> {
     let share = std::env::var("DOWNES_SHARE_STATE").as_deref() == Ok("1");
     let fence_off = std::env::var("DOWNES_NO_SANDBOX").as_deref() == Ok("1");
     if share && fence_off {
-        return "downes: sharing the home state store (DOWNES_SHARE_STATE=1, fence off)";
+        return vec![
+            "downes: sharing the home state store (DOWNES_SHARE_STATE=1, fence off)".into(),
+        ];
     }
-    let note = if share {
+    let note: String = if share {
         "downes: ignoring DOWNES_SHARE_STATE=1 — it needs DOWNES_NO_SANDBOX=1, \
          and shared state is unwritable inside the fence"
+            .into()
     } else {
-        "downes: state isolated to the studio"
+        "downes: state isolated to the studio".into()
     };
+    let mut notes = vec![note];
     let xdg = studio.join(".downes").join("xdg");
+
+    // Our state must never be committable. The studio is the folder teachers
+    // are told to keep courses in and share with colleagues, and the seed below
+    // puts real provider keys inside it — a `git add -A` in ~/Downes would
+    // otherwise stage them.
+    let gitignore = studio.join(".gitignore");
+    let already = fs::read_to_string(&gitignore).unwrap_or_default();
+    if !already.lines().any(|l| l.trim() == ".downes/xdg/") {
+        use std::io::Write;
+        if let Ok(mut f) = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&gitignore)
+        {
+            let _ = writeln!(f, ".downes/xdg/");
+        }
+    }
     for (var, sub) in [
         ("XDG_CONFIG_HOME", "config"),
         ("XDG_DATA_HOME", "data"),
@@ -352,13 +373,23 @@ fn isolate_state(cmd: &mut Command, studio: &Path) -> &'static str {
     ] {
         let dir = xdg.join(sub);
         let _ = fs::create_dir_all(&dir);
+
+        // The engine's folder inside each XDG root is named after its
+        // compiled-in channel (core/src/global.ts): "opencode" before v0.1.4,
+        // "downes" from here on. Bring an existing studio's state with us, or
+        // the teacher opens the studio to an empty session list.
+        let (old, new) = (dir.join("opencode"), dir.join("downes"));
+        if old.is_dir() && !new.exists() {
+            let _ = fs::rename(&old, &new);
+        }
+
         cmd.env(var, &dir);
     }
 
     // Seed the credential store once from the user's real opencode, so
     // isolation costs nobody a second login. The two diverge after this: a
     // provider added here will not show up in a stock opencode session.
-    let seed = xdg.join("data").join("opencode").join("auth.json");
+    let seed = xdg.join("data").join("downes").join("auth.json");
     let real = home().join(".local/share/opencode/auth.json");
     if !seed.exists() && real.is_file() {
         if let Some(parent) = seed.parent() {
@@ -372,7 +403,122 @@ fn isolate_state(cmd: &mut Command, studio: &Path) -> &'static str {
             }
         }
     }
-    note
+
+    // Now that the studio owns a data directory, pull back anything an older
+    // build left in the user's shared opencode folder.
+    notes.extend(reclaim_shared_store(&xdg.join("data").join("downes")));
+    notes
+}
+
+// Builds before v0.1.3 had no XDG isolation, so our engine wrote its database
+// into ~/.local/share/opencode beside a stock opencode's own — two databases,
+// two schemas, one directory, and an error message naming neither. That cost a
+// colleague a morning, and `brew uninstall` leaves it behind.
+//
+// Ours is identifiable: the engine names the database after its compiled-in
+// channel (core/src/database/database.ts), which for this fork is downes/v1 →
+// opencode-downes-v1.db. Stock opencode ships channel latest/beta/prod and uses
+// the unsuffixed opencode.db. We must never touch that one.
+//
+// launcher/downes.sh does the same for the terminal. This exists because a
+// teacher who only ever double-clicks would otherwise never run it.
+// Sessions held in a database, read through sqlite3 with immutable=1 so a live
+// writer is never disturbed and no WAL is created. None when unreadable, which
+// the caller treats as "do not touch".
+fn session_count(db: &Path) -> Option<u64> {
+    let out = Command::new("/usr/bin/sqlite3")
+        .arg(format!("file:{}?immutable=1", db.display()))
+        .arg("select count(*) from session;")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+fn reclaim_shared_store(mine: &Path) -> Vec<String> {
+    let shared = home().join(".local/share/opencode");
+    let mut notes = Vec::new();
+    let Ok(entries) = fs::read_dir(&shared) else {
+        return notes;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !(name.starts_with("opencode-downes-") && name.ends_with(".db")) {
+            continue;
+        }
+        let src = shared.join(&name);
+
+        // Never move a database out from under a live process. Same guard the
+        // launcher uses; macOS always ships lsof.
+        let busy = Command::new("/usr/sbin/lsof")
+            .arg("--")
+            .arg(&src)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if busy {
+            notes.push(format!("downes: {name} is in use; left in the shared store"));
+            continue;
+        }
+
+        let _ = fs::create_dir_all(mine);
+        let sidecars = [format!("{name}-shm"), format!("{name}-wal")];
+
+        if mine.join(&name).exists() {
+            // Both exist. Decide on CONTENT, never on which file happens to be
+            // present: isolation shipped a release before this reclaim did, so
+            // the studio's copy is usually the newer-but-emptier one, and
+            // picking it silently retires a term of a teacher's sessions.
+            let theirs = session_count(&src);
+            let ours = session_count(&mine.join(&name));
+            match (theirs, ours) {
+                (Some(t), Some(o)) if t > o => {
+                    // The stray is richer. Park the sparse copy, never delete.
+                    if fs::rename(&mine.join(&name), mine.join(format!("{name}.sparse"))).is_ok() {
+                        for s in &sidecars {
+                            let _ = fs::remove_file(mine.join(s));
+                        }
+                        if fs::rename(&src, mine.join(&name)).is_ok() {
+                            for s in &sidecars {
+                                let _ = fs::rename(shared.join(s), mine.join(s));
+                            }
+                            notes.push(format!(
+                                "downes: recovered {t} sessions an older build left in your \
+                                 opencode folder; the studio's {o}-session copy is kept as \
+                                 {name}.sparse"
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    // Ours is as rich or richer, or neither could be read. Take
+                    // the stray out of the shared folder but keep it — deleting
+                    // a teacher's only copy on a guess is not ours to do.
+                    if fs::rename(&src, mine.join(format!("{name}.from-shared-store"))).is_ok() {
+                        for s in &sidecars {
+                            let _ = fs::remove_file(shared.join(s));
+                        }
+                        notes.push(format!(
+                            "downes: an older build left {name} in your opencode folder; \
+                             moved it into the studio as {name}.from-shared-store"
+                        ));
+                    }
+                }
+            }
+        } else if fs::rename(&src, mine.join(&name)).is_ok() {
+            for s in &sidecars {
+                let _ = fs::rename(shared.join(s), mine.join(s));
+            }
+            notes.push(format!(
+                "downes: moved {name} out of ~/.local/share/opencode into the studio"
+            ));
+        }
+    }
+    notes
 }
 
 // launcher/downes.sb, found the same way engine_bin() finds the engine: walk
@@ -476,7 +622,7 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         c
     };
 
-    let state_note = isolate_state(&mut cmd, studio);
+    let state_notes = isolate_state(&mut cmd, studio);
 
     // OPENCODE_CONFIG merges our skills/agent/METHOD; project config stays
     // off so a downloaded course cannot smuggle its own config.
@@ -499,6 +645,18 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     let cfg = studio.join("opencode.json");
     if cfg.is_file() {
         cmd.env("OPENCODE_CONFIG", &cfg);
+
+        // The model pin and public-tier key travel by env, not in
+        // $STUDIO/opencode.json — that file sits at the root of a folder the
+        // teacher opens in other tools, and opencode adopts any opencode.json
+        // it finds walking up from its working directory. Leaving model,
+        // small_model or the provider key in it silently repoints a stock
+        // opencode user's account and billing. Merged last, so it wins.
+        // launcher/downes.sh carries the same pair.
+        cmd.env(
+            "OPENCODE_CONFIG_CONTENT",
+            r#"{"model":"opencode/nemotron-3.5-lightning-free","small_model":"opencode/big-pickle","provider":{"opencode":{"options":{"apiKey":"public"}}}}"#,
+        );
     }
 
     // Give the child real stdio. A bundle launched from Finder/Dock inherits
@@ -517,7 +675,9 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
             // A fence that fails open in silence is worse than no fence: the
             // copy still claims containment and nothing contradicts it.
             use std::io::Write;
-            let _ = writeln!(out, "{state_note}");
+            for n in &state_notes {
+                let _ = writeln!(out, "{n}");
+            }
             let _ = match (&fence, std::env::var("DOWNES_NO_SANDBOX").as_deref()) {
                 (Some((_, a)), _) => {
                     let p = a.last().map(String::as_str).unwrap_or("?");

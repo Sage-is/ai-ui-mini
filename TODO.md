@@ -44,6 +44,17 @@ and most of the tree is upstream's.
   drag-out substitute, and the only way to export a whole course folder
 - [x] Status line names the running product, so mini stops calling itself
   Downes
+- [x] Never share a directory with a stock opencode — the fork's XDG folder is
+  named `downes`, not `opencode` (`core/src/global.ts`), so the collision is
+  structurally impossible rather than merely absent. Env isolation only held
+  where the env was set; the binary run any other way still landed in the
+  user's opencode folder. Older builds' databases are reclaimed on launch,
+  deciding by session count and never by which file exists
+- [x] Model pin and public-tier key moved out of `$STUDIO/opencode.json` into
+  the env — opencode adopts any `opencode.json` it finds walking up from its
+  cwd, so those keys silently repointed a stock user's account and billing
+- [x] `.gitignore` ships with the studio template — the seeded `auth.json`
+  lives in a git working tree teachers share courses from
 - [x] Own state root per product — `XDG_*` points at `$STUDIO/.downes/xdg`, so
   mini, Downes and a stock opencode stop sharing one `auth.json` and database.
   Seeded from the user's real store on first run, so isolation costs no second

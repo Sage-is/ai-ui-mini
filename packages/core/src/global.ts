@@ -7,7 +7,27 @@ import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
 
-const app = "opencode"
+// FORK DIVERGENCE — deliberate, unconditional, and the only line in this file
+// we change.
+//
+// Upstream names every XDG path "opencode". This fork is installed alongside a
+// stock opencode on the same machine, and under the same directory name it put
+// its own database, log and lockfile into the user's opencode folder: two
+// databases, two schemas, one directory, and an error message that named
+// neither. That cost a colleague a morning of diagnosis.
+//
+// The launcher and the studio both export XDG_* to keep our state inside the
+// studio, but that only holds where the environment is actually set — the
+// compiled binary run any other way still lands in the shared folder. A
+// distinct directory makes the collision structurally impossible rather than
+// merely absent.
+//
+// It is a plain constant on purpose. Keying it off InstallationChannel looks
+// tidier and is a trap: the channel falls back to the current GIT BRANCH NAME
+// (packages/script/src/index.ts:30), so the data directory would move whenever
+// someone built from a differently-named branch, and users would silently
+// change stores on upgrade.
+const app = "downes"
 const data = path.join(xdgData!, app)
 const cache = path.join(xdgCache!, app)
 const config = path.join(xdgConfig!, app)
