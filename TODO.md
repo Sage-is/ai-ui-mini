@@ -48,9 +48,16 @@ and most of the tree is upstream's.
   mini, Downes and a stock opencode stop sharing one `auth.json` and database.
   Seeded from the user's real store on first run, so isolation costs no second
   login; `DOWNES_SHARE_STATE=1` opts out
-- [x] Layer-3 sandbox actually wired — `sandbox-exec` prefixes the engine on
-  macOS, profile ships in the payload, escape test covers the engine and not
-  just `/bin/sh`, `make sandbox_test` runs it in CI
+- [x] Layer-3 sandbox actually wired — on BOTH surfaces: the terminal launcher
+  and the studio's sidecar spawn. Profile ships in the payload; paths are
+  resolved with `pwd -P` because the sandbox canonicalizes before matching, so
+  an unresolved `/var/folders/...` made the TMP rule silently dead. Escape test
+  is 22 cases, runs the shipped launcher rather than its own env, distinguishes
+  "denied" from "target absent", and covers `serve` — `--version` never binds a
+  port, which is how a missing `network-bind` rule went unnoticed
+- [x] Read fence widened past the original four paths — cloud, forge and agent
+  credential stores, browser profiles, iCloud Drive, dotfile secrets. Still a
+  deny-list over a blanket read-allow, and the profile says so
 - [x] The app lands in `~/Applications` — the launcher links it, because
   Homebrew `post_install` provably cannot
 
@@ -83,6 +90,14 @@ and most of the tree is upstream's.
   - [ ] per-harness config
   - [ ] research spike on each project's runtime requirements and licence
     (unknown; licence matters because mini is MIT and bundling changes that)
+
+- [ ] **Reads are a deny-list, not a fence** — `downes.sb` allows `file-read*`
+  broadly and denies known-secret paths back, so anything not on the list stays
+  readable, and `:443` egress makes it exfiltratable
+  - [ ] flip reads to deny-default with an allowlist; needs the dyld shared
+    cache, frameworks and dylibs enumerated first
+  - [ ] `/private/tmp` is writable because bash heredocs need it — revisit if
+    reads ever become deny-default
 
 - [ ] **OS-level containment beyond macOS** — BLOCKS multi-harness. macOS is
   done (see Delivered); Linux and Windows are unclaimed and the launcher

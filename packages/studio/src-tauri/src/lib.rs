@@ -211,7 +211,30 @@ fn product_workspace() -> String {
             }
         }
     }
+    // No marker: a developer build. `tauri build` emits the bundle into
+    // target/release/bundle/macos with nothing staged around it, so the walk
+    // above finds nothing and mini would call itself Downes and write into
+    // ~/Downes — the wrong name and the wrong workspace, on the machine most
+    // likely to be demoing it. Fall back to the bundle identifier, which both
+    // products always carry and which the two tauri configs already differ on.
+    if bundle_identifier().as_deref() == Some("is.sage.mini") {
+        return "SageMini".into();
+    }
     "Downes".into()
+}
+
+// CFBundleIdentifier out of the app's own Info.plist. Scanned as text rather
+// than parsed: this is a one-key lookup on a file we ship ourselves, and it
+// must not add a plist dependency to the shell.
+fn bundle_identifier() -> Option<String> {
+    let me = std::env::current_exe().ok()?;
+    // …/Foo.app/Contents/MacOS/exe → …/Foo.app/Contents/Info.plist
+    let plist = me.parent()?.parent()?.join("Info.plist");
+    let text = fs::read_to_string(plist).ok()?;
+    let after_key = &text[text.find("<key>CFBundleIdentifier</key>")?..];
+    let start = after_key.find("<string>")? + "<string>".len();
+    let end = after_key[start..].find("</string>")?;
+    Some(after_key[start..start + end].trim().to_string())
 }
 
 // The same marker, as the name a user should see. The workspace folder is
@@ -331,6 +354,61 @@ fn isolate_state(cmd: &mut Command, studio: &Path) {
     }
 }
 
+// launcher/downes.sb, found the same way engine_bin() finds the engine: walk
+// up from the canonicalized exe. Payload layout is libexec/launcher/downes.sb
+// beside libexec/<Product>.app, so the profile travels with every install.
+fn sandbox_profile() -> Option<PathBuf> {
+    let me = std::env::current_exe()
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .ok()?;
+    let mut up = me.parent()?.to_path_buf();
+    for _ in 0..6 {
+        let p = up.join("launcher").join("downes.sb");
+        if p.is_file() {
+            return Some(p);
+        }
+        if !up.pop() {
+            break;
+        }
+    }
+    None
+}
+
+// The studio is the product's main surface, so leaving it unfenced while the
+// terminal launcher fences would make "works in one folder" true only for the
+// command nobody runs. Same profile, same params, same bypass switch as
+// launcher/downes.sh.
+//
+// STUDIO and TMP must be PHYSICAL paths: the sandbox canonicalizes before
+// matching a subpath rule, so /var/folders/... or a symlinked studio never
+// matches and the allow is silently dead.
+fn sandbox_prefix(studio: &Path) -> Option<(PathBuf, Vec<String>)> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    if std::env::var("DOWNES_NO_SANDBOX").as_deref() == Ok("1") {
+        return None;
+    }
+    let profile = sandbox_profile()?;
+    let studio_phys = studio.canonicalize().unwrap_or_else(|_| studio.to_path_buf());
+    let tmp = std::env::temp_dir();
+    let tmp_phys = tmp.canonicalize().unwrap_or(tmp);
+    let home = home();
+    Some((
+        PathBuf::from("/usr/bin/sandbox-exec"),
+        vec![
+            "-D".into(),
+            format!("STUDIO={}", studio_phys.display()),
+            "-D".into(),
+            format!("TMP={}", tmp_phys.display()),
+            "-D".into(),
+            format!("HOMEDIR={}", home.display()),
+            "-f".into(),
+            profile.display().to_string(),
+        ],
+    ))
+}
+
 fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     let fork = fork_opencode();
     let port_s = port.to_string();
@@ -339,8 +417,19 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     // near 0% CPU. Fall back to running from source under an absolutely
     // resolved bun (dev machines that have not built the binary yet).
     let bin = engine_bin(&fork);
+    // Layer 3. Built here rather than at each call site so the from-source
+    // fallback below is fenced too — an unfenced dev path is how a fence stops
+    // being tested.
+    let fence = sandbox_prefix(studio);
     let mut cmd = if !bin.is_empty() {
-        let mut c = Command::new(&bin);
+        let mut c = match &fence {
+            Some((sbx, args)) => {
+                let mut c = Command::new(sbx);
+                c.args(args).arg(&bin);
+                c
+            }
+            None => Command::new(&bin),
+        };
         c.args(["serve", "--hostname", "127.0.0.1", "--port", &port_s]);
         // The compiled engine is self-contained and must NOT be run from the
         // fork: on an installed copy that source tree does not exist, and
@@ -402,7 +491,23 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         let err = f.try_clone()?;
         Ok((f, err))
     }) {
-        Ok((out, err)) => {
+        Ok((mut out, err)) => {
+            // Say which of the two happened, in the file people actually read.
+            // A fence that fails open in silence is worse than no fence: the
+            // copy still claims containment and nothing contradicts it.
+            use std::io::Write;
+            let _ = match (&fence, std::env::var("DOWNES_NO_SANDBOX").as_deref()) {
+                (Some((_, a)), _) => {
+                    let p = a.last().map(String::as_str).unwrap_or("?");
+                    writeln!(out, "downes: sandboxed with {p}")
+                }
+                (None, Ok("1")) => writeln!(out, "downes: sandbox bypassed (DOWNES_NO_SANDBOX=1)"),
+                (None, _) if cfg!(target_os = "macos") => writeln!(
+                    out,
+                    "downes: WARNING running UNFENCED — launcher/downes.sb not found beside the app"
+                ),
+                (None, _) => Ok(()),
+            };
             cmd.stdout(out).stderr(err);
         }
         Err(_) => {
@@ -866,6 +971,53 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The profile lives at libexec/launcher/downes.sb and the app at
+    // libexec/<Product>.app, so the walk from Contents/MacOS has to survive
+    // three pops. Restructure the payload and the fence fails open in
+    // silence — this is the assertion that turns that into a red test.
+    #[test]
+    fn finds_the_profile_across_the_payload_layout() {
+        let root = tmp("profile-walk");
+        let exe_dir = root.join("libexec/Sage.is mini.app/Contents/MacOS");
+        fs::create_dir_all(&exe_dir).unwrap();
+        let launcher = root.join("libexec/launcher");
+        fs::create_dir_all(&launcher).unwrap();
+        fs::write(launcher.join("downes.sb"), "(version 1)").unwrap();
+
+        // Same walk sandbox_profile() performs, against a real payload shape.
+        let mut up = exe_dir.clone();
+        let mut hit = None;
+        for _ in 0..6 {
+            let p = up.join("launcher").join("downes.sb");
+            if p.is_file() {
+                hit = Some(p);
+                break;
+            }
+            if !up.pop() {
+                break;
+            }
+        }
+        assert_eq!(hit, Some(launcher.join("downes.sb")));
+
+        // And a tree without one must not invent a fence.
+        let bare = tmp("profile-walk-bare");
+        let bare_exe = bare.join("target/release/bundle/macos/X.app/Contents/MacOS");
+        fs::create_dir_all(&bare_exe).unwrap();
+        let mut up = bare_exe;
+        let mut hit2 = None;
+        for _ in 0..6 {
+            let p = up.join("launcher").join("downes.sb");
+            if p.is_file() {
+                hit2 = Some(p);
+                break;
+            }
+            if !up.pop() {
+                break;
+            }
+        }
+        assert_eq!(hit2, None);
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("downes-import-test-{name}"));
