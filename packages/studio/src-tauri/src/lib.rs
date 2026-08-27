@@ -315,14 +315,34 @@ fn find_bun() -> Option<PathBuf> {
 // only under STUDIO, so state in ~/.local/share is denied the moment the
 // sandbox is switched on.
 //
-// launcher/downes.sh does exactly this for the TUI. Both entry points must
-// agree, or the isolation is half a fix.
+// launcher/downes.sh does the same for the terminal. The two entry points must
+// stay in step — same XDG roots, same skill flags, same DOWNES_* switches — or
+// the isolation is half a fix and the fence covers whichever surface nobody
+// uses. They differ in exactly one place, deliberately: how each refuses an
+// incoherent flag combination, below.
 //
-// DOWNES_SHARE_STATE=1 opts back out to the shared home store.
-fn isolate_state(cmd: &mut Command, studio: &Path) {
-    if std::env::var("DOWNES_SHARE_STATE").as_deref() == Ok("1") {
-        return;
+// DOWNES_SHARE_STATE=1 opts back out to the shared home store — but only with
+// the fence off, the same pairing rule launcher/downes.sh enforces. Sharing
+// state puts auth.json, the database and the log back under
+// ~/.local/share/opencode, which downes.sb does not make writable; honouring
+// the flag while fenced hands the user an engine that dies opening its own log.
+//
+// The launcher refuses that combination outright. A GUI has no terminal to
+// refuse into and a blank window is worse than a working one, so the studio
+// keeps isolation instead and records the decision in sidecar.log. Returns the
+// line to log.
+fn isolate_state(cmd: &mut Command, studio: &Path) -> &'static str {
+    let share = std::env::var("DOWNES_SHARE_STATE").as_deref() == Ok("1");
+    let fence_off = std::env::var("DOWNES_NO_SANDBOX").as_deref() == Ok("1");
+    if share && fence_off {
+        return "downes: sharing the home state store (DOWNES_SHARE_STATE=1, fence off)";
     }
+    let note = if share {
+        "downes: ignoring DOWNES_SHARE_STATE=1 — it needs DOWNES_NO_SANDBOX=1, \
+         and shared state is unwritable inside the fence"
+    } else {
+        "downes: state isolated to the studio"
+    };
     let xdg = studio.join(".downes").join("xdg");
     for (var, sub) in [
         ("XDG_CONFIG_HOME", "config"),
@@ -352,6 +372,7 @@ fn isolate_state(cmd: &mut Command, studio: &Path) {
             }
         }
     }
+    note
 }
 
 // launcher/downes.sb, found the same way engine_bin() finds the engine: walk
@@ -455,7 +476,7 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         c
     };
 
-    isolate_state(&mut cmd, studio);
+    let state_note = isolate_state(&mut cmd, studio);
 
     // OPENCODE_CONFIG merges our skills/agent/METHOD; project config stays
     // off so a downloaded course cannot smuggle its own config.
@@ -496,6 +517,7 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
             // A fence that fails open in silence is worse than no fence: the
             // copy still claims containment and nothing contradicts it.
             use std::io::Write;
+            let _ = writeln!(out, "{state_note}");
             let _ = match (&fence, std::env::var("DOWNES_NO_SANDBOX").as_deref()) {
                 (Some((_, a)), _) => {
                     let p = a.last().map(String::as_str).unwrap_or("?");

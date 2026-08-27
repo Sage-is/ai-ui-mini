@@ -47,7 +47,10 @@ and most of the tree is upstream's.
 - [x] Own state root per product — `XDG_*` points at `$STUDIO/.downes/xdg`, so
   mini, Downes and a stock opencode stop sharing one `auth.json` and database.
   Seeded from the user's real store on first run, so isolation costs no second
-  login; `DOWNES_SHARE_STATE=1` opts out
+  login. Opting out needs `DOWNES_SHARE_STATE=1` **and** `DOWNES_NO_SANDBOX=1`:
+  shared state lives outside the fence, so either flag alone is incoherent. The
+  launcher refuses the pair-of-one; the studio has no terminal to refuse into,
+  so it keeps isolation and records the decision in `sidecar.log`
 - [x] Layer-3 sandbox actually wired — on BOTH surfaces: the terminal launcher
   and the studio's sidecar spawn. Profile ships in the payload; paths are
   resolved with `pwd -P` because the sandbox canonicalizes before matching, so
