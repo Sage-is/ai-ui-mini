@@ -36,13 +36,34 @@ export function themeFromCss(): TerminalTheme {
   }
 }
 
-const FONT = '"SF Mono","Cascadia Code",Menlo,monospace'
+// Vendored with the app -- see the @font-face block in styles.css. The
+// fallbacks stay: the emulator measures a cell before the webfont finishes
+// loading, and a missing first family would size the grid off Menlo and then
+// reflow. Kept in sync with --mono by hand; the emulator takes a string, not
+// a CSS variable.
+const FONT = '"Annotation Mono","SF Mono","Cascadia Code",Menlo,monospace'
+
+// A terminal sizes its grid from one measured cell, so the font has to be
+// there BEFORE the emulator measures. CSS alone does not guarantee that: a
+// webfont loads lazily, and a canvas-backed engine never triggers the load at
+// all. Ask for it explicitly and swallow the failure -- the fallbacks in FONT
+// are what a machine without the font gets anyway.
+async function loadTerminalFont(): Promise<void> {
+  if (typeof document === "undefined" || !document.fonts) return
+  try {
+    await Promise.all([
+      document.fonts.load('13px "Annotation Mono"'),
+      document.fonts.load('bold 13px "Annotation Mono"'),
+    ])
+  } catch {}
+}
 
 async function xtermEngine(): Promise<TerminalEngine> {
   const [{ Terminal }, { FitAddon }] = await Promise.all([
     import("@xterm/xterm"),
     import("@xterm/addon-fit"),
   ])
+  await loadTerminalFont()
   const term = new Terminal({
     cursorBlink: true,
     fontSize: 13,

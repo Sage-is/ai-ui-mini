@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Downes",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "identifier": "is.sage.downes",
   "build": {
     "frontendDist": "../frontend/dist",

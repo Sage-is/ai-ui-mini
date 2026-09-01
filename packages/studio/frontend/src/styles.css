@@ -12,6 +12,29 @@
    palettes that drift apart. The attribute is set in index.html before the
    body parses, so there is no flash. */
 
+/* Annotation Mono, vendored.
+   Bundled rather than named, because the CSP blocks every external host and a
+   teammate who has not installed the font would silently fall back to Menlo.
+   The Nerd Font build is deliberate: opencode's TUI draws powerline and icon
+   glyphs, so a subset risks tofu in the terminal. SIL Open Font License 1.1 --
+   see fonts/LICENSE-AnnotationMono.txt, which the OFL requires to travel with
+   the font. The "Mono" cut is the fixed-width one; the proportional cut would
+   break every column the TUI aligns. */
+@font-face {
+  font-family: "Annotation Mono";
+  src: url("./fonts/AnnotationMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Annotation Mono";
+  src: url("./fonts/AnnotationMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   /* AI-UI sets html to 120%; every rem in that product is ~19.2px. Matching
      it is what makes 0.8rem body / 0.6rem label read at the same size here
@@ -39,7 +62,7 @@
   --radius-pill: 9999px;
   --tn-app: 150ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  --mono: "SF Mono", "Cascadia Code", Menlo, monospace;
+  --mono: "Annotation Mono", "SF Mono", "Cascadia Code", Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
   --serif: "Charter", "Iowan Old Style", Georgia, serif;
 }
