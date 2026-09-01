@@ -294,8 +294,19 @@ fn fork_opencode() -> PathBuf {
     if let Ok(p) = std::env::var("DOWNES_FORK") {
         return PathBuf::from(p);
     }
-    // …/ai-ui-mini/packages/studio/src-tauri → …/ai-ui-mini/packages/opencode
-    let mut p = std::env::current_dir().unwrap_or_default();
+    // Walk up from the BINARY, not the working directory. current_dir() is
+    // whatever shell or Finder happened to launch us from, so on a dev machine
+    // this probed ~/Documents/... one level at a time -- a tree the sandbox
+    // profile explicitly denies. An installed app has no fork above it, so the
+    // walk simply finds nothing and stops, which is the correct answer.
+    //
+    // This is the same rule as payload_roots() and studio_template(): derive
+    // from current_exe(), never from the working directory.
+    let mut p = std::env::current_exe()
+        .map(|e| e.canonicalize().unwrap_or(e))
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_default();
     for _ in 0..6 {
         let cand = p.join("packages/opencode/src/index.ts");
         if cand.exists() {
@@ -635,6 +646,18 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         c.current_dir(studio);
         c
     } else {
+        // No compiled engine in this bundle. That is normal for a dev build run
+        // from the source tree, and a bug anywhere else: `tauri build` emits a
+        // bundle into target/release/bundle/macos with nothing staged around
+        // it, Spotlight indexes it, and clicking it lands here. Say so, because
+        // the symptom otherwise reaches the user as "sidecar unreachable" with
+        // nothing naming the cause.
+        if fork.as_os_str().is_empty() {
+            eprintln!(
+                "downes: this bundle carries no engine and no source tree is above it.\n                   It is an incomplete `tauri build` artifact, not an installed app.\n                   Install with `brew install sage-is/apps/mini`, or set DOWNES_ENGINE."
+            );
+            return None;
+        }
         let bun = find_bun()?;
         let mut c = Command::new(bun);
         c.args([
@@ -1124,6 +1147,16 @@ pub fn run() {
     // Must run before the sidecar: it writes the opencode.json that
     // OPENCODE_CONFIG points at.
     ensure_studio(&studio);
+
+    // Stand in our own workspace before anything else runs. Launched from a
+    // terminal, the app inherits that shell's directory; launched from Finder
+    // it inherits `/`. Either way it is not ours, and the sandbox profile
+    // denies ~/Documents, ~/Desktop and ~/Downloads outright -- so a path
+    // derived from an inherited cwd is at best wrong and at worst a denial the
+    // user sees as "sidecar unreachable". The studio is the project; make it
+    // the working directory too.
+    let _ = std::env::set_current_dir(&studio);
+
     let child = spawn_sidecar(&studio, port, &password);
     let server = ServerInfo {
         url: format!("http://127.0.0.1:{}", port),
