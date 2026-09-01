@@ -254,6 +254,25 @@ fn studio_dir() -> PathBuf {
 }
 
 // The fork's opencode package (run from source in dev).
+// Kill the sidecar AND the engine under it.
+//
+// The handle we hold is `sandbox-exec`; the engine is its child and puts
+// itself in a fresh process group, so neither `child.kill()` nor a kill on our
+// own group reaches it. Through 0.1.6 that left `opencode serve` listening on
+// 127.0.0.1 after the window closed, one orphan per launch. Take the children
+// by parent pid first, then the wrapper, then reap so nothing is left a zombie.
+fn reap(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("/usr/bin/pkill")
+            .arg("-P")
+            .arg(child.id().to_string())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn fork_opencode() -> PathBuf {
     if let Ok(p) = std::env::var("DOWNES_FORK") {
         return PathBuf::from(p);
@@ -693,16 +712,6 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     }
     cmd.stdin(std::process::Stdio::null());
 
-    // Own process group. The child we hold is `sandbox-exec`, and the engine
-    // runs as its grandchild, so killing the handle alone left `opencode
-    // serve` listening on 127.0.0.1 after the window closed. With a group of
-    // its own, one signal reaches the whole tree.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
-
     match cmd.spawn() {
         Ok(child) => Some(child),
         Err(e) => {
@@ -1141,23 +1150,28 @@ pub fn run() {
                 if let Some(state) = window.app_handle().try_state::<AppState>() {
                     if let Ok(mut c) = state.child.lock() {
                         if let Some(mut child) = c.take() {
-                            // Group first, so the engine goes with the wrapper.
-                            #[cfg(unix)]
-                            {
-                                let _ = Command::new("/bin/kill")
-                                    .arg("--")
-                                    .arg(format!("-{}", child.id()))
-                                    .status();
-                            }
-                            let _ = child.kill();
-                            let _ = child.wait();
+                            reap(&mut child);
                         }
                     }
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        // Window-destroyed alone is not enough: Cmd-Q and the app menu can end
+        // the process without it, which is one route to the orphaned engine.
+        // Exit fires for every route, and reap() is safe to run twice.
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<AppState>() {
+                    if let Ok(mut c) = state.child.lock() {
+                        if let Some(mut child) = c.take() {
+                            reap(&mut child);
+                        }
+                    }
+                }
+            }
+        });
 }
 
 // ---- tests -----------------------------------------------------------------

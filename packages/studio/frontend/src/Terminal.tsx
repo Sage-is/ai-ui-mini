@@ -89,7 +89,6 @@ export default function Terminal(props: { onActivity?: () => void }) {
     try {
       if (ptyID && (await api.ptyAlive(ptyID))) {
         await connect()
-        failures = 0
         return
       }
       // Resume only while the session looks healthy. If --continue is what
@@ -101,7 +100,10 @@ export default function Terminal(props: { onActivity?: () => void }) {
       pushSize()
       await connect()
       pushSize()
-      failures = 0
+      // Deliberately NOT resetting `failures` here. Spawning succeeds even
+      // when the child dies a moment later, so resetting on a successful
+      // spawn made the counter unreachable and the loop ran forever at a flat
+      // interval. ws.onclose owns the reset, and only for a pane that lived.
     } catch (e) {
       failures++
       if (failures >= MAX_FAILURES) return giveUp(String(e))
