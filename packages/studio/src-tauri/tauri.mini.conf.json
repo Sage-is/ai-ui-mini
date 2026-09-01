@@ -1,11 +1,11 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Sage.is mini",
+  "productName": "SAGE.IS mini",
   "identifier": "is.sage.mini",
   "app": {
     "windows": [
       {
-        "title": "SAGE.ISmini"
+        "title": "SAGE.IS mini"
       }
     ]
   },
