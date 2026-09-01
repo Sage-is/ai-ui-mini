@@ -70,7 +70,7 @@ export async function sendPrompt(sessionID: string, prompt: string) {
 // Running `opencode` off PATH would launch the stock, unbranded binary; the
 // fork's index.ts carries the sage.is wordmark and downes agent. The studio
 // path as the positional project makes the TUI operate there.
-export async function createPty(resume = false): Promise<{ id: string }> {
+export async function createPty(resume = false): Promise<{ id: string; cmd: string }> {
   const s = await server()
   // Prefer the compiled binary (idles near 0% CPU); fall back to source.
   // `resume` continues the prior session when relaunching after a quit.
@@ -78,7 +78,10 @@ export async function createPty(resume = false): Promise<{ id: string }> {
   const spawn = s.bin
     ? { command: s.bin, args: [...cont, s.studio] }
     : { command: "bun", args: ["run", "--conditions=browser", "--cwd", s.fork, "src/index.ts", ...cont, s.studio] }
-  return api<{ id: string }>(
+  // Returned so a pane that keeps dying can name what it tried to run. A
+  // respawn loop that cannot say the command is a loop nobody can debug.
+  const cmd = [spawn.command, ...spawn.args].join(" ")
+  const r = await api<{ id: string }>(
     `/api/pty?location[directory]=${encodeURIComponent(s.studio)}`,
     {
       method: "POST",
@@ -90,6 +93,7 @@ export async function createPty(resume = false): Promise<{ id: string }> {
       }),
     },
   )
+  return { ...r, cmd }
 }
 
 // Single-use, ~60s ticket that lets the WebSocket upgrade skip Basic auth.

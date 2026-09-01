@@ -33,6 +33,7 @@ export default function Terminal(props: { onActivity?: () => void }) {
     const ticket = await api.connectToken(ptyID!)
     const url = await api.ptyConnectUrl(ptyID!, ticket, cursor)
     ws = new WebSocket(url)
+    startedAt = Date.now()
     ws.binaryType = "arraybuffer"
     ws.onmessage = (m) => {
       // Terminal OUTPUT arrives as string frames; binary frames are control.
@@ -50,8 +51,35 @@ export default function Terminal(props: { onActivity?: () => void }) {
       }
     }
     ws.onclose = () => {
-      if (!disposed) setTimeout(recover, 1000)
+      if (disposed) return
+      // A pane that died seconds after starting is a failing child, not a
+      // dropped connection. Only the short-lived case counts as a failure;
+      // a terminal the teacher used for an hour resets the count.
+      if (Date.now() - startedAt < SHORT_LIFE_MS) failures++
+      else failures = 0
+      if (failures >= MAX_FAILURES)
+        return giveUp("The terminal exited immediately " + MAX_FAILURES + " times running:\n" + lastCmd)
+      setTimeout(recover, backoff())
     }
+  }
+
+  // A pty that dies immediately used to be respawned forever, roughly once a
+  // second, each attempt printing its own error: 22 cycles in 26 seconds on
+  // 0.1.6. The loop hid the cause, because nothing ever reported why the child
+  // exited. Count consecutive failures, back off, and give up with the reason
+  // on screen. A pane that spawns and lives resets the count.
+  let failures = 0
+  let startedAt = 0
+  let lastCmd = "(unknown)"
+  const MAX_FAILURES = 5
+  const SHORT_LIFE_MS = 5000
+  const backoff = () => Math.min(1000 * 2 ** failures, 15000)
+
+  const giveUp = (why: string) => {
+    disposed = true
+    host.textContent =
+      "The Downes terminal stopped after " + MAX_FAILURES + " failed starts.\n\n" + why +
+      "\n\nReopen the app to try again."
   }
 
   // On disconnect: if the pty still lives, reconnect and replay. If the TUI
@@ -61,16 +89,23 @@ export default function Terminal(props: { onActivity?: () => void }) {
     try {
       if (ptyID && (await api.ptyAlive(ptyID))) {
         await connect()
+        failures = 0
         return
       }
-      const p = await api.createPty(true) // resume the prior session
+      // Resume only while the session looks healthy. If --continue is what
+      // keeps killing the child, retrying it unchanged can never recover.
+      const p = await api.createPty(failures === 0)
       ptyID = p.id
+      lastCmd = p.cmd
       cursor = 0
       pushSize()
       await connect()
       pushSize()
-    } catch {
-      setTimeout(recover, 1500)
+      failures = 0
+    } catch (e) {
+      failures++
+      if (failures >= MAX_FAILURES) return giveUp(String(e))
+      setTimeout(recover, backoff())
     }
   }
 
@@ -108,6 +143,7 @@ export default function Terminal(props: { onActivity?: () => void }) {
     try {
       const p = await api.createPty()
       ptyID = p.id
+      lastCmd = p.cmd
       pushSize()
       await connect()
       pushSize()

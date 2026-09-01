@@ -150,8 +150,21 @@ fn ensure_studio(studio: &Path) {
     let _ = fs::create_dir_all(studio);
 
     let Some(tpl) = studio_template() else {
-        // No curriculum template: this is the bare platform. Stop here rather
-        // than inventing a courses/ folder, which is a Downes concept.
+        // No curriculum template: this is the bare platform. Do not invent a
+        // courses/ folder, which is a Downes concept -- but do not ship with
+        // no config at all either. Without one the engine falls back to its
+        // own defaults and asks before every edit, which is the permission
+        // prompting teachers reported. Deny reaching outside the workspace and
+        // leave `edit` to the default: mini has no folder convention to
+        // allow-list, so a blanket allow here could not be written safely
+        // (`**` matches `../.ssh/id_rsa`).
+        let cfg = studio.join("opencode.json");
+        if !cfg.exists() {
+            let _ = fs::write(
+                &cfg,
+                "{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"permission\": {\n    \"external_directory\": {\n      \"*\": \"deny\"\n    }\n  }\n}\n",
+            );
+        }
         return;
     };
     let _ = fs::create_dir_all(studio.join("courses"));
@@ -256,7 +269,11 @@ fn fork_opencode() -> PathBuf {
             break;
         }
     }
-    home().join("Documents/Projects/GitHub/AI-Education-Downes/ai-ui-mini/packages/opencode")
+    // No fallback. This used to name the maintainer's own checkout, which
+    // shipped that path to every user and could only ever resolve on one Mac.
+    // An empty path fails the `is_file()` checks downstream, which is the
+    // honest answer when there is no fork here.
+    PathBuf::new()
 }
 
 fn free_port() -> u16 {
@@ -675,6 +692,16 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         }
     }
     cmd.stdin(std::process::Stdio::null());
+
+    // Own process group. The child we hold is `sandbox-exec`, and the engine
+    // runs as its grandchild, so killing the handle alone left `opencode
+    // serve` listening on 127.0.0.1 after the window closed. With a group of
+    // its own, one signal reaches the whole tree.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
 
     match cmd.spawn() {
         Ok(child) => Some(child),
@@ -1114,7 +1141,16 @@ pub fn run() {
                 if let Some(state) = window.app_handle().try_state::<AppState>() {
                     if let Ok(mut c) = state.child.lock() {
                         if let Some(mut child) = c.take() {
+                            // Group first, so the engine goes with the wrapper.
+                            #[cfg(unix)]
+                            {
+                                let _ = Command::new("/bin/kill")
+                                    .arg("--")
+                                    .arg(format!("-{}", child.id()))
+                                    .status();
+                            }
                             let _ = child.kill();
+                            let _ = child.wait();
                         }
                     }
                 }
