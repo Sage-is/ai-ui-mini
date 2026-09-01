@@ -218,7 +218,7 @@ fn product_workspace() -> String {
     // likely to be demoing it. Fall back to the bundle identifier, which both
     // products always carry and which the two tauri configs already differ on.
     if bundle_identifier().as_deref() == Some("is.sage.mini") {
-        return "SageMini".into();
+        return "SAGE.ISmini".into();
     }
     "Downes".into()
 }
@@ -238,19 +238,36 @@ fn bundle_identifier() -> Option<String> {
 }
 
 // The same marker, as the name a user should see. The workspace folder is
-// "SageMini" because a space in a home-directory path is a nuisance; the
-// product is written "mini".
+// "SAGE.ISmini" with no space, because a space in a home-directory path is a
+// nuisance at a shell; the product is written "mini".
 fn product_label() -> String {
     match product_workspace().as_str() {
-        "SageMini" => "mini".into(),
+        "SAGE.ISmini" | "SageMini" => "mini".into(),
         other => other.to_string(),
     }
 }
 
 fn studio_dir() -> PathBuf {
-    std::env::var("DOWNES_STUDIO")
+    let dir = std::env::var("DOWNES_STUDIO")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| home().join(product_workspace()))
+        .unwrap_or_else(|_| home().join(product_workspace()));
+    adopt_old_workspace(&dir);
+    dir
+}
+
+// mini's workspace was "~/SageMini" through 0.1.7. Renaming it without moving
+// anything would strand a user's work in a folder the app no longer opens, so
+// carry it over once. Only when the new name does not exist yet: if both are
+// present the user has already been here, and merging two workspaces on a
+// guess is not ours to do.
+fn adopt_old_workspace(dir: &Path) {
+    if dir.file_name().and_then(|n| n.to_str()) != Some("SAGE.ISmini") || dir.exists() {
+        return;
+    }
+    let old = home().join("SageMini");
+    if old.is_dir() {
+        let _ = fs::rename(&old, dir);
+    }
 }
 
 // The fork's opencode package (run from source in dev).
