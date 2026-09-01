@@ -88,8 +88,12 @@ export async function createPty(resume = false): Promise<{ id: string; cmd: stri
       body: JSON.stringify({
         ...spawn,
         cwd: s.studio,
+        // PWD as well as cwd. The two are separate: setting a child's working
+        // directory does not update PWD, and Node and Bun read PWD. A stale
+        // one -- inherited from whatever shell launched the app -- is what made
+        // the pane stat a path outside the studio and die on the sandbox.
         // opentui reads COLORTERM for truecolor; TERM is set by the pty core.
-        env: { COLORTERM: "truecolor" },
+        env: { COLORTERM: "truecolor", PWD: s.studio },
       }),
     },
   )

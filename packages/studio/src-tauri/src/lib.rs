@@ -644,6 +644,8 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         // spawning with a missing cwd fails outright. The studio is the
         // correct working directory anyway — it is the project.
         c.current_dir(studio);
+        // current_dir does not set PWD either, and the child inherits ours.
+        c.env("PWD", studio);
         c
     } else {
         // No compiled engine in this bundle. That is normal for a dev build run
@@ -672,6 +674,7 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         ]);
         // Only the from-source path needs the fork as cwd.
         c.current_dir(&fork);
+        c.env("PWD", &fork);
         c
     };
 
@@ -1156,6 +1159,12 @@ pub fn run() {
     // user sees as "sidecar unreachable". The studio is the project; make it
     // the working directory too.
     let _ = std::env::set_current_dir(&studio);
+    // set_current_dir does NOT update PWD, and PWD is what the engine reads.
+    // Node and Bun trust the environment variable over getcwd(), so an app
+    // launched from a terminal carried that shell's directory into the engine
+    // no matter what the real cwd was -- and the engine then stat'd a path the
+    // sandbox denies. Left unset, this is the whole "EPERM lstat" bug.
+    std::env::set_var("PWD", &studio);
 
     let child = spawn_sidecar(&studio, port, &password);
     let server = ServerInfo {
