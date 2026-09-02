@@ -162,7 +162,7 @@ fn ensure_studio(studio: &Path) {
         if !cfg.exists() {
             let _ = fs::write(
                 &cfg,
-                "{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"permission\": {\n    \"external_directory\": {\n      \"*\": \"deny\"\n    }\n  }\n}\n",
+                "{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"permission\": {\n    \"external_directory\": {\n      \"*\": \"deny\"\n    },\n    \"webfetch\": \"allow\",\n    \"websearch\": \"allow\"\n  }\n}\n",
             );
         }
         return;
