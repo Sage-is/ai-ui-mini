@@ -2,12 +2,12 @@
 
 > Navigate chart, top → down.
 > mini is the platform; Downes is the first agent shipped on it.
-> Ships via Homebrew as `brew install sage-is/apps/mini`.
+> Ships via Homebrew as `brew install --cask sage-is/apps/mini`.
 
 ## Destination
 
 mini is the platform; Downes is the first agent shipped on it. Ships via
-Homebrew as `brew install sage-is/apps/mini`.
+Homebrew as `brew install --cask sage-is/apps/mini`.
 
 ## Notes
 
@@ -35,7 +35,8 @@ and most of the tree is upstream's.
   `tauri.mini.conf.json`
 - [x] Install-relative engine resolution (`engine_bin()` walks up from
   `current_exe()`)
-- [x] First-run workspace bootstrap in `~/SageMini`
+- [x] First-run workspace bootstrap in `~/SAGE.ISmini` (was `~/SageMini` until
+  0.1.8; `adopt_old_workspace` carries an existing one across)
 - [x] startr.style theming with light/dark toggle
 - [x] Drag files and folders INTO the sidebar — onto a folder row or the pane
   for the studio root. Skips dotfiles and symlinks, never overwrites; 7 tests
@@ -72,14 +73,15 @@ and most of the tree is upstream's.
 - [x] Read fence widened past the original four paths — cloud, forge and agent
   credential stores, browser profiles, iCloud Drive, dotfile secrets. Still a
   deny-list over a blanket read-allow, and the profile says so
-- [x] The app lands in `~/Applications` — the launcher links it, because
-  Homebrew `post_install` provably cannot
+- [x] The app is placed by the cask's `app` stanza and the command by its
+  `binary` stanza. Was the launcher's job when these shipped as formulae, since
+  `post_install` could not do it; that code is gone and so is the constraint
 
 ## In Progress / TODO
 
 - [ ] **Verify the brew install on a second Mac** #task — installed and
   released, not yet confirmed by anyone but the build machine
-  - [ ] `brew install sage-is/apps/mini` on a clean account; no Gatekeeper warning
+  - [ ] `brew install --cask sage-is/apps/mini` on a clean account; no Gatekeeper warning
   - [ ] engine starts with bun, node and opencode absent from PATH
 
 ## Backlog
