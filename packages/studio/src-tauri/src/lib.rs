@@ -1315,6 +1315,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // symlink creation here is unix-only; see the note above
     fn skips_symlinks_without_following_them() {
         let d = tmp("links");
         fs::write(d.join("real.md"), "x").unwrap();
@@ -1328,6 +1329,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // symlink creation here is unix-only; see the note above
     fn symlink_cycle_terminates() {
         let d = tmp("cycle");
         fs::write(d.join("a.md"), "x").unwrap();
