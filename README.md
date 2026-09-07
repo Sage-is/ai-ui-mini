@@ -1,129 +1,54 @@
-<p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">The open source AI coding agent.</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
-</p>
+# SAGE.IS mini
 
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
-</p>
+SAGE.IS mini is a self-contained macOS desktop studio: a Tauri shell around a bundled AI coding engine. mini is the platform, not an agent — no agent ships inside it. Downes, the curriculum agent, is a separate product built on mini, in the AGPL repo `Sage-is/AI-Education-Downes`.
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
-
----
-
-### Installation
+## Install
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
-
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # Any OS
-nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev branch
+brew tap sage-is/apps
+brew install --cask sage-is/apps/mini
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
+Apple Silicon only. The workspace lands at `~/SAGE.ISmini`.
 
-### Desktop App (BETA)
+The app is ad-hoc signed, not notarized. The cask clears quarantine on install. Notarization is pending.
 
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
+## Platform support
 
-| Platform              | Download                           |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`, `.rpm`, or `.AppImage`     |
+macOS on Apple Silicon is the only build that ships. There is no Intel build; that needs an x86_64 runner.
+
+Windows and Linux are unclaimed, not refused. The Tauri shell is already written for them. `packages/studio/src-tauri/src/lib.rs` branches per platform for the engine name (`opencode.exe`), for Reveal (`explorer /select,` on Windows, `xdg-open` on Linux) and for opening links. What is missing is the build and the delivery: the packaging script and the Homebrew cask are macOS-only, `tauri.conf.json` targets `app` and `dmg`, and the engine binary must be compiled per target.
+
+Containment does not port, by design. `sandbox_prefix()` returns `None` off macOS, because the profile is macOS Seatbelt and has no equivalent we ship elsewhere. A Windows or Linux build therefore runs with no OS-level fence. Its honest claim is "works in one folder" — never "sandboxed". That wording is a rule, not a preference, and it holds until a real containment layer lands and passes an escape test. Linux's candidate is Landlock; Windows' is AppContainer, and both are unfunded work.
+
+## What it does
+
+The studio window has three panes:
+
+- **Left — file manager.** A Rust-fenced tree over the studio directory. Dotfiles and studio plumbing stay hidden. It polls for live updates.
+- **Center — the TUI.** The compiled engine binary runs as a server PTY, rendered through an xterm.js terminal over a ticket-gated WebSocket.
+- **Right — artifact viewer.** Renders Markdown and slide decks; links open in the default browser.
+
+Drag files and folders into the sidebar to add them to the workspace. Every sidebar row supports Reveal in Finder, files and folders alike — the way to get content back out. The interface has a light/dark toggle.
+
+## Isolation
+
+mini keeps its own state root, separate from any stock opencode install or from Downes: `XDG_*` points inside the studio directory, so auth tokens and databases don't collide across products. State is seeded from the user's existing store on first run, so isolation costs no second login.
+
+A sandbox profile (`sandbox-exec`, macOS only) fences the process at launch, on both the terminal launcher and the studio's sidecar spawn. File reads are a deny-list, not a fence: broad read access is allowed, with known-secret paths denied back. Network egress is TLS-only; hostnames are not pinned. Treat the sandbox as a hardening layer, not a full containment guarantee.
+
+## Development
 
 ```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
+bun install
+bun run --cwd packages/opencode build
+cd packages/studio && bunx tauri dev
 ```
 
-#### Installation Directory
+## Licence and provenance
 
-The install script respects the following priority order for the installation path:
+MIT. This repo is a fork of https://github.com/anomalyco/opencode at v1.18.18.
 
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+Not built by the OpenCode team, and not affiliated with them in any way.
 
-```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Agents
-
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
-
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
-
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
-
-Learn more about [agents](https://opencode.ai/docs/agents).
-
-### Documentation
-
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
-
-### Contributing
-
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
-
-### Building on OpenCode
-
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
-
----
-
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+Third-party components and their terms are listed in `NOTICE.md`.

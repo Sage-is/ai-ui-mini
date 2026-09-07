@@ -119,8 +119,9 @@ and most of the tree is upstream's.
   done (see Delivered); Linux and Windows are unclaimed and the launcher
   leaves one seam for a backend
   - [ ] Linux: Landlock, not bubblewrap — ladder in
-    `docs/decisions/vm-containment.md`
-  - [ ] Windows: still deferred, `docs/decisions/windows-sandbox.md`
+    `docs/decisions/vm-containment.md` in the AI-Education-Downes checkout
+  - [ ] Windows: still deferred, `docs/decisions/windows-sandbox.md` in the
+    AI-Education-Downes checkout
   - [ ] `sandbox-exec` is deprecated by Apple with no removal date; App
     Sandbox needs codesigning we do not have yet
 
