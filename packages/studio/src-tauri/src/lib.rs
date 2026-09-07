@@ -885,18 +885,12 @@ fn open_external(url: String) -> Result<(), String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("only http(s) links".into());
     }
-    let prog = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "start"
-    } else {
-        "xdg-open"
-    };
-    Command::new(prog)
-        .arg(&url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // Not Command::new("start"): `start` is a cmd.exe BUILTIN, so spawning it
+    // as a program fails outright on Windows — and routing through `cmd /C`
+    // instead would hand a URL's `&` to the shell as a command separator. The
+    // opener plugin is already registered; its Rust API goes through
+    // ShellExecuteExW with no shell in between, on every platform.
+    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| e.to_string())
 }
 
 // Open a studio file (an HTML artifact) in the user's default browser. Fenced
@@ -911,18 +905,8 @@ fn open_in_browser(state: State<AppState>, rel: String) -> Result<(), String> {
     if !canon.starts_with(&root_canon) {
         return Err("outside studio".into());
     }
-    let prog = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "start"
-    } else {
-        "xdg-open"
-    };
-    Command::new(prog)
-        .arg(&canon)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // See open_external: `start` is a cmd.exe builtin, not a program.
+    tauri_plugin_opener::open_path(&canon, None::<&str>).map_err(|e| e.to_string())
 }
 
 // Print / Save as PDF. The macOS webview (WKWebView) does not implement
@@ -935,18 +919,8 @@ fn print_html(html: String) -> Result<(), String> {
     let mut path = std::env::temp_dir();
     path.push("downes-print.html");
     fs::write(&path, html).map_err(|e| e.to_string())?;
-    let prog = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "start"
-    } else {
-        "xdg-open"
-    };
-    Command::new(prog)
-        .arg(&path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // See open_external: `start` is a cmd.exe builtin, not a program.
+    tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
