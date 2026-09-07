@@ -48,6 +48,32 @@ cd packages/studio && bunx tauri dev
 
 `DOWNES_STUDIO=<dir>` overrides the studio (default `~/Downes`).
 
+## Build (Windows)
+
+Needs the MSVC Rust toolchain (`winget install Rustlang.Rustup`), VS C++
+build tools, and the WebView2 runtime.
+
+```bash
+bun packages/opencode/script/build.ts --single   # the engine, from the fork root
+cd packages/studio && bunx tauri build
+```
+
+`tauri.windows.conf.json` is merged automatically on Windows. It sets the
+bundle target to `nsis` — the base config's `app`/`dmg` are macOS-only — and
+stages the engine into the bundle:
+
+- `beforeBuildCommand` runs `scripts/stage-payload.ts`, which copies the
+  host-arch engine to `src-tauri/payload/bin/opencode.exe` (gitignored).
+- `bundle.resources` maps that to `bin/opencode.exe`, so NSIS installs it
+  beside the app exe, where `engine_bin()` looks first.
+
+That staging is what macOS gets from the Homebrew cask, and it is why an
+installed copy works at all: engine resolution is relative to `current_exe()`,
+so a bundle with no engine and no fork above it has nothing to run. Cross-arch
+bundles need the engine built for the target being bundled, not the host.
+
+The installer lands in `src-tauri/target/release/bundle/nsis/`.
+
 ## Why the compiled binary
 
 Running the TUI from source via `bun run src/index.ts` keeps bun's runtime

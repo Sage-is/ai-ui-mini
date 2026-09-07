@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "build": {
+    "beforeBuildCommand": "bun run ../scripts/stage-payload.ts && bun run --cwd ../frontend build"
+  },
+  "bundle": {
+    "targets": ["nsis"],
+    "resources": {
+      "payload/bin/opencode.exe": "bin/opencode.exe"
+    }
+  }
+}
