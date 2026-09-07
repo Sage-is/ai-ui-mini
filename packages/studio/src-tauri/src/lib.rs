@@ -218,6 +218,26 @@ fn home() -> PathBuf {
     PathBuf::new()
 }
 
+// The engine is a console-subsystem executable, so Windows allocates a console
+// for it and that console gets a window — an empty terminal in front of the
+// app, holding nothing anyone can read: the sidecar's stdout and stderr are
+// already redirected to $STUDIO/.downes/sidecar.log. main.rs keeps the SHELL
+// off the console subsystem; this keeps its child off too.
+//
+// Release only would be wrong: `tauri dev` on Windows raises the same window,
+// and a flag that only applies to shipped builds is a flag nobody tests.
+#[cfg(windows)]
+fn hide_console(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW. Not exported by std, and pulling in windows-sys for one
+    // constant is not worth it.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_console(_cmd: &mut Command) {}
+
 // Anchor a path, so that resolving it a second time — from a different working
 // directory — cannot name a different place.
 fn absolutize(dir: PathBuf, cwd: &Path) -> PathBuf {
@@ -790,6 +810,7 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         }
     }
     cmd.stdin(std::process::Stdio::null());
+    hide_console(&mut cmd);
 
     match cmd.spawn() {
         Ok(child) => Some(child),
