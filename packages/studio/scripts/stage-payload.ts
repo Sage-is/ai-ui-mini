@@ -52,3 +52,21 @@ await fs.copyFile(source, destination)
 
 const mb = (stat.size / 1024 / 1024).toFixed(1)
 console.log(`stage-payload: staged ${target}/bin/${exe} (${mb} MB) -> ${path.relative(forkDir, destination)}`)
+
+// Which product this bundle is. product_workspace() reads this marker; without
+// one it falls back to the bundle identifier, and that fallback parses
+// Info.plist — a file no Windows bundle has. So on Windows the marker is not
+// an optimisation, it is the only channel: unmarked, "SAGE.IS mini" would name
+// its window correctly and still write into ~/Downes.
+const product = process.env["DOWNES_PRODUCT"] ?? "SAGE.ISmini"
+await fs.writeFile(path.join(payloadDir, "product"), `${product}\n`, "utf8")
+console.log(`stage-payload: product marker = ${product}`)
+
+// The same marker beside the unbundled binary. `tauri build` leaves
+// target/release/downes-studio.exe runnable in place and people do run it —
+// resources are only copied into the INSTALLER, so without this that copy
+// disagrees with the installed one about which product it is.
+const releaseDir = path.join(studioDir, "src-tauri", "target", "release")
+if (await fs.stat(releaseDir).then((s) => s.isDirectory()).catch(() => false)) {
+  await fs.writeFile(path.join(releaseDir, "product"), `${product}\n`, "utf8")
+}

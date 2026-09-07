@@ -55,17 +55,29 @@ build tools, and the WebView2 runtime.
 
 ```bash
 bun packages/opencode/script/build.ts --single   # the engine, from the fork root
-cd packages/studio && bunx tauri build
+cd packages/studio && bunx tauri build --config src-tauri/tauri.mini.conf.json
 ```
 
-`tauri.windows.conf.json` is merged automatically on Windows. It sets the
-bundle target to `nsis` — the base config's `app`/`dmg` are macOS-only — and
-stages the engine into the bundle:
+Windows ships **mini**, so pass the mini config — the staged product marker
+says `SAGE.ISmini`, and a plain `tauri build` would name the app Downes while
+that marker sent it to `~/SAGE.ISmini`. To build Downes here instead, override
+both: `DOWNES_PRODUCT=Downes bunx tauri build`.
+
+`tauri.windows.conf.json` is merged automatically on Windows, with or without
+`--config`. It sets the bundle target to `nsis` — the base config's `app`/`dmg`
+are macOS-only — and stages the payload into the bundle:
 
 - `beforeBuildCommand` runs `scripts/stage-payload.ts`, which copies the
-  host-arch engine to `src-tauri/payload/bin/opencode.exe` (gitignored).
-- `bundle.resources` maps that to `bin/opencode.exe`, so NSIS installs it
-  beside the app exe, where `engine_bin()` looks first.
+  host-arch engine to `src-tauri/payload/bin/opencode.exe` and writes the
+  product marker (both gitignored).
+- `bundle.resources` maps those to `bin/opencode.exe` and `product`, so NSIS
+  installs them beside the app exe, where `engine_bin()` and
+  `product_workspace()` look first.
+
+The marker is not optional on Windows. Unmarked, `product_workspace()` falls
+back to `bundle_identifier()`, which parses `Info.plist` — a file no Windows
+bundle has — so mini would name its window correctly and still write into
+`~/Downes`.
 
 That staging is what macOS gets from the Homebrew cask, and it is why an
 installed copy works at all: engine resolution is relative to `current_exe()`,

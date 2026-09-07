@@ -6,7 +6,8 @@
   "bundle": {
     "targets": ["nsis"],
     "resources": {
-      "payload/bin/opencode.exe": "bin/opencode.exe"
+      "payload/bin/opencode.exe": "bin/opencode.exe",
+      "payload/product": "product"
     }
   }
 }
