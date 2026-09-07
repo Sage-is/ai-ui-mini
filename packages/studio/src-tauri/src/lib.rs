@@ -192,8 +192,40 @@ struct AppState {
     child: Mutex<Option<Child>>,
 }
 
+// Windows has no HOME: a GUI process there gets USERPROFILE. Reading only HOME
+// returned an EMPTY path, which made studio_dir() RELATIVE -- and a relative
+// studio is re-resolved by every consumer against its own working directory:
+// ensure_studio at the launch dir, the sidecar after set_current_dir, then the
+// PTY inside the engine. Each hop appended another segment, so the workspace
+// became ...\release\Downes\Downes\Downes\Downes\Downes and the engine failed
+// to chdir, instead of failing once somewhere a reader could see it.
+//
+// USERPROFILE first on Windows: a HOME there is usually a shell's invention
+// (Git Bash exports a POSIX-style one) and is not what native paths want.
 fn home() -> PathBuf {
-    std::env::var("HOME").map(PathBuf::from).unwrap_or_default()
+    #[cfg(windows)]
+    const KEYS: [&str; 2] = ["USERPROFILE", "HOME"];
+    #[cfg(not(windows))]
+    const KEYS: [&str; 1] = ["HOME"];
+
+    for key in KEYS {
+        if let Some(value) = std::env::var_os(key) {
+            if !value.is_empty() {
+                return PathBuf::from(value);
+            }
+        }
+    }
+    PathBuf::new()
+}
+
+// Anchor a path, so that resolving it a second time — from a different working
+// directory — cannot name a different place.
+fn absolutize(dir: PathBuf, cwd: &Path) -> PathBuf {
+    if dir.is_absolute() {
+        dir
+    } else {
+        cwd.join(dir)
+    }
 }
 
 // Which product this bundle is. One Rust binary ships in two apps — Downes
@@ -251,6 +283,10 @@ fn studio_dir() -> PathBuf {
     let dir = std::env::var("DOWNES_STUDIO")
         .map(PathBuf::from)
         .unwrap_or_else(|_| home().join(product_workspace()));
+    // Absolute or nothing — see the note on home(). Should the environment
+    // still yield no home, anchoring to the launch directory at least gives
+    // every consumer the SAME directory rather than one each.
+    let dir = absolutize(dir, &std::env::current_dir().unwrap_or_default());
     adopt_old_workspace(&dir);
     dir
 }
@@ -1397,5 +1433,31 @@ mod tests {
         assert!(hidden_name("node_modules"));
         assert!(hidden_name("opencode.json"));
         assert!(!hidden_name("lesson.md"));
+    }
+
+    // run() hands the studio path to ensure_studio, to set_current_dir, to the
+    // sidecar's current_dir and to the webview — and each resolves it against a
+    // different working directory. A relative one therefore does not name one
+    // place slightly wrongly; it names a new place per hop, which is how
+    // "Downes" became ...\release\Downes\Downes\Downes\Downes\Downes. The
+    // property worth holding is that the second resolution changes nothing.
+    #[test]
+    fn studio_path_survives_a_change_of_working_directory() {
+        let launch = PathBuf::from(if cfg!(windows) { r"C:\launch\dir" } else { "/launch/dir" });
+        let anchored = absolutize(PathBuf::from("Downes"), &launch);
+        assert!(anchored.is_absolute());
+        assert_eq!(anchored, launch.join("Downes"));
+
+        // Resolved again from where the app has since chdir'd: same directory.
+        assert_eq!(absolutize(anchored.clone(), &anchored), anchored);
+    }
+
+    // The Windows GUI process has no HOME, and an empty home is what made the
+    // workspace path relative in the first place.
+    #[test]
+    fn home_comes_back_absolute() {
+        let h = home();
+        assert!(!h.as_os_str().is_empty(), "no home directory in the environment");
+        assert!(h.is_absolute(), "home is not absolute: {}", h.display());
     }
 }
