@@ -5,6 +5,11 @@
   },
   "bundle": {
     "targets": ["nsis"],
+    "windows": {
+      "nsis": {
+        "template": "installer.nsi"
+      }
+    },
     "resources": {
       "payload/bin/opencode.exe": "bin/opencode.exe",
       "payload/product": "product"
