@@ -7,7 +7,12 @@
     "targets": ["nsis"],
     "windows": {
       "nsis": {
-        "template": "installer.nsi"
+        "template": "installer.nsi",
+        "installerIcon": "icons-mini/icon.ico",
+        "uninstallerIcon": "icons-mini/icon.ico",
+        "headerImage": "installer-header.bmp",
+        "sidebarImage": "installer-sidebar.bmp",
+        "uninstallerHeaderImage": "installer-header.bmp"
       }
     },
     "resources": {

@@ -79,6 +79,26 @@ back to `bundle_identifier()`, which parses `Info.plist` — a file no Windows
 bundle has — so mini would name its window correctly and still write into
 `~/Downes`.
 
+### Installer branding
+
+`scripts/make-installer-art.py` draws `installer-sidebar.bmp` (the Welcome and
+Finish panel) and `installer-header.bmp` (the band on the other pages) from
+`app-icon-mini.png`, in sage.education's palette. It is an offline tool, not
+part of the build — run it and commit the bitmaps when the icon changes.
+
+Both are drawn at 2x the classic control sizes and paired with
+`MUI_..._BITMAP_STRETCH "AspectFitHeight"` in `installer.nsi`. MUI's default is
+`FitControl`, which stretches to fill; the installer is DPI-aware and dialog
+units do not scale equally on both axes, so on a scaled display that default
+squashes the artwork by about 5% and softens the text by upscaling.
+
+`installerIcon`/`uninstallerIcon` must be set explicitly — Tauri does NOT fall
+back to `bundle.icon` for them, and unset means NSIS's stock icon ships on the
+setup .exe.
+
+Like the product marker, these assets are mini's. A Downes-branded Windows
+build would carry them.
+
 That staging is what macOS gets from the Homebrew cask, and it is why an
 installed copy works at all: engine resolution is relative to `current_exe()`,
 so a bundle with no engine and no fork above it has nothing to run. Cross-arch

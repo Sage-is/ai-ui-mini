@@ -144,6 +144,20 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
   !define MUI_ICON "${INSTALLERICON}"
 !endif
 
+; sage.education's paper white. The sidebar bitmap uses the same value, so
+; the panel reads as part of the page rather than a pasted-on rectangle.
+!define MUI_BGCOLOR "FAF8F4"
+
+; Scale both bitmaps by HEIGHT, keeping their aspect. MUI's default is
+; FitControl, which stretches to fill the control -- and because the
+; installer is DPI-aware, that control's width and height do not scale by
+; the same factor on a scaled display. The panel came out ~5% narrow and the
+; hexagon stopped being a hexagon. The bitmaps are drawn at 2x for the same
+; reason: at 150% the control is bigger than the classic 164x314.
+!define MUI_WELCOMEFINISHPAGE_BITMAP_STRETCH "AspectFitHeight"
+!define MUI_HEADERIMAGE_BITMAP_STRETCH "AspectFitHeight"
+!define MUI_HEADERIMAGE_UNBITMAP_STRETCH "AspectFitHeight"
+
 ; Installer sidebar image
 !if "${SIDEBARIMAGE}" != ""
   !define MUI_WELCOMEFINISHPAGE_BITMAP "${SIDEBARIMAGE}"
@@ -178,6 +192,8 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
+!define MUI_WELCOMEPAGE_TITLE "${PRODUCTNAME}"
+!define MUI_WELCOMEPAGE_TEXT "A private AI workspace that runs on this machine.$\r$\n$\r$\nSetup installs ${PRODUCTNAME} and its engine for your account only. No administrator rights are needed and nothing is sent anywhere.$\r$\n$\r$\nClick Next to continue."
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_WELCOME
 
@@ -420,6 +436,8 @@ Var AppStartMenuFolder
 ; Don't auto jump to finish page after installation page,
 ; because the installation page has useful info that can be used debug any issues with the installer.
 !define MUI_FINISHPAGE_NOAUTOCLOSE
+!define MUI_FINISHPAGE_TITLE "${PRODUCTNAME} is installed"
+!define MUI_FINISHPAGE_TEXT "Your workspace is created the first time you open it.$\r$\n$\r$\nFind ${PRODUCTNAME} in the Start menu."
 ; Use show readme button in the finish page as a button create a desktop shortcut
 !define MUI_FINISHPAGE_SHOWREADME
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "$(createDesktop)"
