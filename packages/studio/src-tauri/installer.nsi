@@ -396,9 +396,11 @@ Function PageLeaveReinstall
   reinst_done:
 FunctionEnd
 
-; 5. Choose install directory page
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
-!insertmacro MUI_PAGE_DIRECTORY
+; 5. Choose install directory page -- REMOVED.
+; This installs per-user into a fixed location; asking a teacher to pick a
+; directory offers a decision they have no basis to make, and a wrong answer
+; (Program Files, a synced folder) causes support work later. $INSTDIR keeps
+; the default the rest of this script already assumes.
 
 ; 6. Start menu shortcut page
 Var AppStartMenuFolder
