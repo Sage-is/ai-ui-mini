@@ -192,8 +192,60 @@ struct AppState {
     child: Mutex<Option<Child>>,
 }
 
+// Windows has no HOME: a GUI process there gets USERPROFILE. Reading only HOME
+// returned an EMPTY path, which made studio_dir() RELATIVE -- and a relative
+// studio is re-resolved by every consumer against its own working directory:
+// ensure_studio at the launch dir, the sidecar after set_current_dir, then the
+// PTY inside the engine. Each hop appended another segment, so the workspace
+// became ...\release\Downes\Downes\Downes\Downes\Downes and the engine failed
+// to chdir, instead of failing once somewhere a reader could see it.
+//
+// USERPROFILE first on Windows: a HOME there is usually a shell's invention
+// (Git Bash exports a POSIX-style one) and is not what native paths want.
 fn home() -> PathBuf {
-    std::env::var("HOME").map(PathBuf::from).unwrap_or_default()
+    #[cfg(windows)]
+    const KEYS: [&str; 2] = ["USERPROFILE", "HOME"];
+    #[cfg(not(windows))]
+    const KEYS: [&str; 1] = ["HOME"];
+
+    for key in KEYS {
+        if let Some(value) = std::env::var_os(key) {
+            if !value.is_empty() {
+                return PathBuf::from(value);
+            }
+        }
+    }
+    PathBuf::new()
+}
+
+// The engine is a console-subsystem executable, so Windows allocates a console
+// for it and that console gets a window — an empty terminal in front of the
+// app, holding nothing anyone can read: the sidecar's stdout and stderr are
+// already redirected to $STUDIO/.downes/sidecar.log. main.rs keeps the SHELL
+// off the console subsystem; this keeps its child off too.
+//
+// Release only would be wrong: `tauri dev` on Windows raises the same window,
+// and a flag that only applies to shipped builds is a flag nobody tests.
+#[cfg(windows)]
+fn hide_console(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW. Not exported by std, and pulling in windows-sys for one
+    // constant is not worth it.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_console(_cmd: &mut Command) {}
+
+// Anchor a path, so that resolving it a second time — from a different working
+// directory — cannot name a different place.
+fn absolutize(dir: PathBuf, cwd: &Path) -> PathBuf {
+    if dir.is_absolute() {
+        dir
+    } else {
+        cwd.join(dir)
+    }
 }
 
 // Which product this bundle is. One Rust binary ships in two apps — Downes
@@ -251,6 +303,10 @@ fn studio_dir() -> PathBuf {
     let dir = std::env::var("DOWNES_STUDIO")
         .map(PathBuf::from)
         .unwrap_or_else(|_| home().join(product_workspace()));
+    // Absolute or nothing — see the note on home(). Should the environment
+    // still yield no home, anchoring to the launch directory at least gives
+    // every consumer the SAME directory rather than one each.
+    let dir = absolutize(dir, &std::env::current_dir().unwrap_or_default());
     adopt_old_workspace(&dir);
     dir
 }
@@ -754,6 +810,7 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         }
     }
     cmd.stdin(std::process::Stdio::null());
+    hide_console(&mut cmd);
 
     match cmd.spawn() {
         Ok(child) => Some(child),
@@ -828,18 +885,12 @@ fn open_external(url: String) -> Result<(), String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("only http(s) links".into());
     }
-    let prog = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "start"
-    } else {
-        "xdg-open"
-    };
-    Command::new(prog)
-        .arg(&url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // Not Command::new("start"): `start` is a cmd.exe BUILTIN, so spawning it
+    // as a program fails outright on Windows — and routing through `cmd /C`
+    // instead would hand a URL's `&` to the shell as a command separator. The
+    // opener plugin is already registered; its Rust API goes through
+    // ShellExecuteExW with no shell in between, on every platform.
+    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| e.to_string())
 }
 
 // Open a studio file (an HTML artifact) in the user's default browser. Fenced
@@ -854,18 +905,8 @@ fn open_in_browser(state: State<AppState>, rel: String) -> Result<(), String> {
     if !canon.starts_with(&root_canon) {
         return Err("outside studio".into());
     }
-    let prog = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "start"
-    } else {
-        "xdg-open"
-    };
-    Command::new(prog)
-        .arg(&canon)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // See open_external: `start` is a cmd.exe builtin, not a program.
+    tauri_plugin_opener::open_path(&canon, None::<&str>).map_err(|e| e.to_string())
 }
 
 // Print / Save as PDF. The macOS webview (WKWebView) does not implement
@@ -878,18 +919,8 @@ fn print_html(html: String) -> Result<(), String> {
     let mut path = std::env::temp_dir();
     path.push("downes-print.html");
     fs::write(&path, html).map_err(|e| e.to_string())?;
-    let prog = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "start"
-    } else {
-        "xdg-open"
-    };
-    Command::new(prog)
-        .arg(&path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // See open_external: `start` is a cmd.exe builtin, not a program.
+    tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1315,6 +1346,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // symlink creation here is unix-only; see the note above
     fn skips_symlinks_without_following_them() {
         let d = tmp("links");
         fs::write(d.join("real.md"), "x").unwrap();
@@ -1328,6 +1360,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // symlink creation here is unix-only; see the note above
     fn symlink_cycle_terminates() {
         let d = tmp("cycle");
         fs::write(d.join("a.md"), "x").unwrap();
@@ -1395,5 +1428,31 @@ mod tests {
         assert!(hidden_name("node_modules"));
         assert!(hidden_name("opencode.json"));
         assert!(!hidden_name("lesson.md"));
+    }
+
+    // run() hands the studio path to ensure_studio, to set_current_dir, to the
+    // sidecar's current_dir and to the webview — and each resolves it against a
+    // different working directory. A relative one therefore does not name one
+    // place slightly wrongly; it names a new place per hop, which is how
+    // "Downes" became ...\release\Downes\Downes\Downes\Downes\Downes. The
+    // property worth holding is that the second resolution changes nothing.
+    #[test]
+    fn studio_path_survives_a_change_of_working_directory() {
+        let launch = PathBuf::from(if cfg!(windows) { r"C:\launch\dir" } else { "/launch/dir" });
+        let anchored = absolutize(PathBuf::from("Downes"), &launch);
+        assert!(anchored.is_absolute());
+        assert_eq!(anchored, launch.join("Downes"));
+
+        // Resolved again from where the app has since chdir'd: same directory.
+        assert_eq!(absolutize(anchored.clone(), &anchored), anchored);
+    }
+
+    // The Windows GUI process has no HOME, and an empty home is what made the
+    // workspace path relative in the first place.
+    #[test]
+    fn home_comes_back_absolute() {
+        let h = home();
+        assert!(!h.as_os_str().is_empty(), "no home directory in the environment");
+        assert!(h.is_absolute(), "home is not absolute: {}", h.display());
     }
 }

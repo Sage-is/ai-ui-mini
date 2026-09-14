@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "build": {
+    "beforeBuildCommand": "bun run ../scripts/stage-payload.ts && bun run --cwd ../frontend build"
+  },
+  "bundle": {
+    "targets": ["nsis"],
+    "windows": {
+      "nsis": {
+        "template": "installer.nsi",
+        "installerIcon": "icons-mini/icon.ico",
+        "uninstallerIcon": "icons-mini/icon.ico",
+        "headerImage": "installer-header.bmp",
+        "sidebarImage": "installer-sidebar.bmp",
+        "uninstallerHeaderImage": "installer-header.bmp"
+      }
+    },
+    "resources": {
+      "payload/bin/opencode.exe": "bin/opencode.exe",
+      "payload/product": "product"
+    }
+  }
+}

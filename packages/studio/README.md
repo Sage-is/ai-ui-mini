@@ -48,6 +48,64 @@ cd packages/studio && bunx tauri dev
 
 `DOWNES_STUDIO=<dir>` overrides the studio (default `~/Downes`).
 
+## Build (Windows)
+
+Needs the MSVC Rust toolchain (`winget install Rustlang.Rustup`), VS C++
+build tools, and the WebView2 runtime.
+
+```bash
+bun packages/opencode/script/build.ts --single   # the engine, from the fork root
+cd packages/studio && bunx tauri build --config src-tauri/tauri.mini.conf.json
+```
+
+Windows ships **mini**, so pass the mini config — the staged product marker
+says `SAGE.ISmini`, and a plain `tauri build` would name the app Downes while
+that marker sent it to `~/SAGE.ISmini`. To build Downes here instead, override
+both: `DOWNES_PRODUCT=Downes bunx tauri build`.
+
+`tauri.windows.conf.json` is merged automatically on Windows, with or without
+`--config`. It sets the bundle target to `nsis` — the base config's `app`/`dmg`
+are macOS-only — and stages the payload into the bundle:
+
+- `beforeBuildCommand` runs `scripts/stage-payload.ts`, which copies the
+  host-arch engine to `src-tauri/payload/bin/opencode.exe` and writes the
+  product marker (both gitignored).
+- `bundle.resources` maps those to `bin/opencode.exe` and `product`, so NSIS
+  installs them beside the app exe, where `engine_bin()` and
+  `product_workspace()` look first.
+
+The marker is not optional on Windows. Unmarked, `product_workspace()` falls
+back to `bundle_identifier()`, which parses `Info.plist` — a file no Windows
+bundle has — so mini would name its window correctly and still write into
+`~/Downes`.
+
+### Installer branding
+
+`scripts/make-installer-art.py` draws `installer-sidebar.bmp` (the Welcome and
+Finish panel) and `installer-header.bmp` (the band on the other pages) from
+`app-icon-mini.png`, in sage.education's palette. It is an offline tool, not
+part of the build — run it and commit the bitmaps when the icon changes.
+
+Both are drawn at 2x the classic control sizes and paired with
+`MUI_..._BITMAP_STRETCH "AspectFitHeight"` in `installer.nsi`. MUI's default is
+`FitControl`, which stretches to fill; the installer is DPI-aware and dialog
+units do not scale equally on both axes, so on a scaled display that default
+squashes the artwork by about 5% and softens the text by upscaling.
+
+`installerIcon`/`uninstallerIcon` must be set explicitly — Tauri does NOT fall
+back to `bundle.icon` for them, and unset means NSIS's stock icon ships on the
+setup .exe.
+
+Like the product marker, these assets are mini's. A Downes-branded Windows
+build would carry them.
+
+That staging is what macOS gets from the Homebrew cask, and it is why an
+installed copy works at all: engine resolution is relative to `current_exe()`,
+so a bundle with no engine and no fork above it has nothing to run. Cross-arch
+bundles need the engine built for the target being bundled, not the host.
+
+The installer lands in `src-tauri/target/release/bundle/nsis/`.
+
 ## Why the compiled binary
 
 Running the TUI from source via `bun run src/index.ts` keeps bun's runtime
