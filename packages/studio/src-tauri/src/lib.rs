@@ -2,7 +2,6 @@
 // scoped to the studio directory, injects credentials into the webview, and
 // exposes studio-fenced file commands for the file manager + artifact viewer.
 use std::fs;
-use std::io::Read;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -386,11 +385,15 @@ fn free_port() -> u16 {
         .unwrap_or(4096)
 }
 
+// The sidecar's HTTP Basic password, and the server behind it runs shell
+// commands. getrandom reads the OS CSPRNG on every platform; the old
+// /dev/urandom read ignored its own failure and, on Windows where no such
+// file exists, handed back 32 zeros. No randomness means no launch: an
+// unguarded sidecar is worse than none.
 fn random_password() -> String {
     let mut buf = [0u8; 16];
-    if let Ok(mut f) = fs::File::open("/dev/urandom") {
-        let _ = f.read_exact(&mut buf);
-    }
+    getrandom::fill(&mut buf)
+        .expect("no OS random source; refusing to start an unguarded sidecar");
     buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
@@ -1270,6 +1273,14 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_is_random_and_never_blank() {
+        let (a, b) = (random_password(), random_password());
+        assert_eq!(a.len(), 32);
+        assert_ne!(a, "0".repeat(32));
+        assert_ne!(a, b);
+    }
 
     // The profile lives at libexec/launcher/downes.sb and the app at
     // libexec/<Product>.app, so the walk from Contents/MacOS has to survive
