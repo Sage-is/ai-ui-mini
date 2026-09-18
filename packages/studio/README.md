@@ -54,9 +54,18 @@ Needs the MSVC Rust toolchain (`winget install Rustlang.Rustup`), VS C++
 build tools, and the WebView2 runtime.
 
 ```bash
-bun packages/opencode/script/build.ts --single   # the engine, from the fork root
+# The engine, from the fork root. Both variables matter: unset, the build
+# stamps the version 0.0.0-<branch>-<timestamp>, which fails provider gates
+# asking for a minimum opencode version, and names the database after the
+# current git branch, so a Windows install disagrees with a macOS one.
+OPENCODE_CHANNEL=downes/v1 \
+OPENCODE_VERSION=$(bun packages/studio/scripts/engine-version.ts) \
+  bun packages/opencode/script/build.ts --single
 cd packages/studio && bunx tauri build --config src-tauri/tauri.mini.conf.json
 ```
+
+In PowerShell, set them first instead: `$env:OPENCODE_CHANNEL = "downes/v1"`
+and `$env:OPENCODE_VERSION = (bun packages/studio/scripts/engine-version.ts)`.
 
 Windows ships **mini**, so pass the mini config — the staged product marker
 says `SAGE.ISmini`, and a plain `tauri build` would name the app Downes while
