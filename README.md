@@ -21,7 +21,7 @@ Windows and Linux are unclaimed, not refused. The Tauri shell is already written
 
 Containment does not port, by design. `sandbox_prefix()` returns `None` off macOS, because the profile is macOS Seatbelt and has no equivalent we ship elsewhere. A Windows or Linux build therefore runs with no OS-level fence. Its honest claim is "works in one folder" — never "sandboxed". That wording is a rule, not a preference, and it holds until a real containment layer lands and passes an escape test. Linux's candidate is Landlock; Windows' is AppContainer, and both are unfunded work.
 
-A Windows port is mapped in `docs/porting-windows.md`: what already works, what is unwritten, and the blockers with file and line. Read it before starting. One of them is a security defect that must be fixed before the app runs at all on Windows.
+Windows 11 is supported from 0.1.13: an NSIS installer that carries its own engine. `docs/porting-windows.md` records what works, what does not, and the gaps that remain, with file and line.
 
 ## What it does
 
