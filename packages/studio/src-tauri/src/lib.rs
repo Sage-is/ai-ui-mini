@@ -6,6 +6,7 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
+use tauri_plugin_window_state::StateFlags;
 
 use serde::Serialize;
 use tauri::{Manager, State};
@@ -1228,6 +1229,22 @@ pub fn run() {
             import_paths,
             reveal_in_finder
         ])
+        // Remember where the window was and how large it was. Without this every
+        // launch lands at the configured 1200x800, centred, however the user left
+        // it. SIZE, POSITION, MAXIMIZED and FULLSCREEN only: VISIBLE and
+        // DECORATIONS would let a window saved hidden come back hidden, with no
+        // way to reach it. The state file lives in the app config directory,
+        // which is per identifier, so Downes and mini never share one.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    StateFlags::SIZE
+                        | StateFlags::POSITION
+                        | StateFlags::MAXIMIZED
+                        | StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
