@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      }
+    },
+    "resources": {
+      "payload/bin/opencode.exe": "bin/opencode.exe",
+      "payload/product": "product",
+      "payload/studio": "studio"
+    }
+  }
+}

@@ -69,8 +69,13 @@ and `$env:OPENCODE_VERSION = (bun packages/studio/scripts/engine-version.ts)`.
 
 Windows ships **mini**, so pass the mini config — the staged product marker
 says `SAGE.ISmini`, and a plain `tauri build` would name the app Downes while
-that marker sent it to `~/SAGE.ISmini`. To build Downes here instead, override
-both: `DOWNES_PRODUCT=Downes bunx tauri build`.
+that marker sent it to `~/SAGE.ISmini`.
+
+Downes is not built from here. It also ships the curriculum template, which is
+AGPL and lives in the Downes checkout, so its Windows build runs
+`scripts/package_windows.ps1 -Product downes` from there. That script points
+`DOWNES_TEMPLATE` at the template and `stage-payload.ts` stages what it names;
+this repo never carries a copy.
 
 `tauri.windows.conf.json` is merged automatically on Windows, with or without
 `--config`. It sets the bundle target to `nsis` — the base config's `app`/`dmg`

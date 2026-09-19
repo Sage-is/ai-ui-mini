@@ -44,6 +44,30 @@ if (!stat?.isFile()) {
   process.exit(1)
 }
 
+// Refuse an engine that is not the one this build claims to ship. The copy
+// above takes whatever sits in dist/, and dist/ is not rebuilt by a shell-only
+// change: a Windows 0.1.13 installer went out carrying the engine built twelve
+// days earlier, still reporting 0.0.0-downes/v1-<timestamp>. package_macos.sh
+// asserts the same thing in the Downes checkout; this is the Windows half.
+const expected = (await Bun.$`bun ${path.join(studioDir, "scripts", "engine-version.ts")}`.text()).trim()
+const reported = (await Bun.$`${source} --version`.text().catch(() => "")).trim()
+if (reported !== expected) {
+  console.error(
+    [
+      `stage-payload: the compiled engine reports ${reported || "nothing"}, expected ${expected}`,
+      ``,
+      `Rebuild it, from the fork root:`,
+      `  OPENCODE_CHANNEL=downes/v1 OPENCODE_VERSION=${expected} bun packages/opencode/script/build.ts --single`,
+      ``,
+      `In PowerShell:`,
+      `  $env:OPENCODE_CHANNEL = "downes/v1"`,
+      `  $env:OPENCODE_VERSION = (bun packages/studio/scripts/engine-version.ts)`,
+      `  bun packages/opencode/script/build.ts --single`,
+    ].join("\n"),
+  )
+  process.exit(1)
+}
+
 // Replaced wholesale: a stale engine from an earlier build is worse than none,
 // because it ships and runs.
 await fs.rm(payloadDir, { recursive: true, force: true })
@@ -61,6 +85,28 @@ console.log(`stage-payload: staged ${target}/bin/${exe} (${mb} MB) -> ${path.rel
 const product = process.env["DOWNES_PRODUCT"] ?? "SAGE.ISmini"
 await fs.writeFile(path.join(payloadDir, "product"), `${product}\n`, "utf8")
 console.log(`stage-payload: product marker = ${product}`)
+
+// The curriculum template, when the caller names one. Downes ships it; mini has
+// none, and must not: ensure_studio treats its absence as "this is the bare
+// platform". It lives in the Downes checkout, which is AGPL — this script only
+// copies what it is pointed at, and never carries a copy of its own.
+//
+// courses/ is the teacher's folder and is created empty at first launch, so the
+// sample courses in the source template stay out of the bundle.
+const templateDir = process.env["DOWNES_TEMPLATE"]
+if (templateDir) {
+  const config = path.join(templateDir, "opencode.json")
+  if (!(await fs.stat(config).catch(() => undefined))?.isFile()) {
+    console.error(`stage-payload: DOWNES_TEMPLATE has no opencode.json: ${templateDir}`)
+    process.exit(1)
+  }
+  const target = path.join(payloadDir, "studio")
+  await fs.cp(templateDir, target, {
+    recursive: true,
+    filter: (src) => !path.relative(templateDir, src).startsWith(path.join(".downes", "courses")),
+  })
+  console.log(`stage-payload: staged curriculum template -> ${path.relative(forkDir, target)}`)
+}
 
 // The same marker beside the unbundled binary. `tauri build` leaves
 // target/release/downes-studio.exe runnable in place and people do run it —
