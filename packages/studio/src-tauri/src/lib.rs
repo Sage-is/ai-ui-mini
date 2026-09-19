@@ -677,6 +677,59 @@ fn sandbox_prefix(studio: &Path) -> Option<(PathBuf, Vec<String>)> {
     ))
 }
 
+// The teacher's own settings, merged last so they beat ours.
+//
+// $STUDIO/opencode.json is ours: ensure_studio rewrites it on every launch, so
+// an edit there lasts until the next start. opencode.local.json is theirs, and
+// nothing here ever writes or refreshes it. A teacher who wants the curriculum
+// agent to have a shell, or a school on Copilot who wants another model, says
+// so there once and it survives upgrades.
+//
+// Project config stays disabled, so this is the ONLY teacher-writable config:
+// a downloaded course still cannot smuggle its own opencode.json.
+//
+// Unreadable or malformed, it is skipped with a line in sidecar.log. A typo in
+// a settings file must not stop the studio opening.
+fn merge_local_config(studio: &Path, pins: &str) -> String {
+    let local = studio.join("opencode.local.json");
+    let Ok(text) = fs::read_to_string(&local) else {
+        return pins.to_string();
+    };
+    let mut base: serde_json::Value = match serde_json::from_str(pins) {
+        Ok(v) => v,
+        Err(_) => return pins.to_string(),
+    };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(over) => {
+            merge_json(&mut base, over);
+            base.to_string()
+        }
+        Err(e) => {
+            eprintln!("downes: ignoring {}: {e}", local.display());
+            pins.to_string()
+        }
+    }
+}
+
+// Deep merge: objects combine key by key, anything else is replaced whole. A
+// teacher overriding one permission must not have to restate the rest of the
+// block, and replacing an array wholesale is what someone editing a list means.
+fn merge_json(base: &mut serde_json::Value, over: serde_json::Value) {
+    match (base, over) {
+        (serde_json::Value::Object(b), serde_json::Value::Object(o)) => {
+            for (k, v) in o {
+                match b.get_mut(&k) {
+                    Some(slot) => merge_json(slot, v),
+                    None => {
+                        b.insert(k, v);
+                    }
+                }
+            }
+        }
+        (slot, v) => *slot = v,
+    }
+}
+
 fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
     let fork = fork_opencode();
     let port_s = port.to_string();
@@ -769,10 +822,9 @@ fn spawn_sidecar(studio: &Path, port: u16, password: &str) -> Option<Child> {
         // small_model or the provider key in it silently repoints a stock
         // opencode user's account and billing. Merged last, so it wins.
         // launcher/downes.sh carries the same pair.
-        cmd.env(
-            "OPENCODE_CONFIG_CONTENT",
-            r#"{"model":"opencode/nemotron-3.5-lightning-free","small_model":"opencode/big-pickle","provider":{"opencode":{"options":{"apiKey":"public"}}}}"#,
-        );
+        const PINS: &str =
+            r#"{"model":"opencode/nemotron-3.5-lightning-free","small_model":"opencode/big-pickle","provider":{"opencode":{"options":{"apiKey":"public"}}}}"#;
+        cmd.env("OPENCODE_CONFIG_CONTENT", merge_local_config(studio, PINS));
     }
 
     // Give the child real stdio. A bundle launched from Finder/Dock inherits
@@ -1290,6 +1342,41 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // $STUDIO/opencode.json is ours and is rewritten on every launch, so the
+    // teacher's settings have to live somewhere else and land last.
+    #[test]
+    fn local_config_overrides_our_pins() {
+        let d = tmp("localcfg");
+        fs::write(
+            d.join("opencode.local.json"),
+            r#"{"model":"github-copilot/claude-sonnet-4.6","agent":{"downes":{"permission":{"bash":"ask"}}}}"#,
+        )
+        .unwrap();
+        let merged = merge_local_config(&d, r#"{"model":"opencode/x","small_model":"opencode/y"}"#);
+        let v: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(v["model"], "github-copilot/claude-sonnet-4.6");
+        // Untouched keys survive: overriding one setting must not mean
+        // restating every other.
+        assert_eq!(v["small_model"], "opencode/y");
+        assert_eq!(v["agent"]["downes"]["permission"]["bash"], "ask");
+    }
+
+    // A typo in a settings file must not stop the studio opening.
+    #[test]
+    fn malformed_local_config_is_ignored() {
+        let d = tmp("badcfg");
+        fs::write(d.join("opencode.local.json"), "{ this is not json").unwrap();
+        let pins = r#"{"model":"opencode/x"}"#;
+        assert_eq!(merge_local_config(&d, pins), pins);
+    }
+
+    #[test]
+    fn absent_local_config_changes_nothing() {
+        let d = tmp("nocfg");
+        let pins = r#"{"model":"opencode/x"}"#;
+        assert_eq!(merge_local_config(&d, pins), pins);
+    }
 
     #[test]
     fn password_is_random_and_never_blank() {
