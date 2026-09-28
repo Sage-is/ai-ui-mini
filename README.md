@@ -1,6 +1,6 @@
 # SAGE.IS mini
 
-SAGE.IS mini is a self-contained macOS desktop studio: a Tauri shell around a bundled AI coding engine. mini is the platform, not an agent — no agent ships inside it. Downes, the curriculum agent, is a separate product built on mini, in the AGPL repo `Sage-is/AI-Education-Downes`.
+SAGE.IS mini is a self-contained macOS desktop studio: a Tauri shell around a bundled AI coding engine. mini is a safer and simple way to get started with Agentic development. Downes, the curriculum agent, is a separate product built on mini, in the AGPL repo `Sage-is/AI-Education-Downes`.
 
 ## Install
 
